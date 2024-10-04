@@ -168,3 +168,5 @@ cython_debug/
 
 # Local file
 .env.toml
+llama.cpp
+outputs

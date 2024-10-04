@@ -141,7 +141,7 @@ def train_model(
 
 if __name__ == "__main__":
     train_model(
-        save_path="/mnt/d/models",
+        save_path="models",
         save_model_name="test",
         model_format="gguf",
         quantization_method="f16",

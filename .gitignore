@@ -170,3 +170,4 @@ cython_debug/
 .env.toml
 llama.cpp
 outputs
+models

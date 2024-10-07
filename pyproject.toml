@@ -1,0 +1,51 @@
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[project]
+name = "unsloth-train"
+dynamic = ["version"]
+authors = [{ name = "yoga", email = "ychsu@iii.org.tw" }]
+description = "Train LLM with unsloth"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = ["Programming Language :: Python :: 3"]
+dependencies = [
+    "torch==2.4.0",
+    "numpy==1.26.4",
+    "unsloth[cu121-ampere-torch240] @ git+https://github.com/unslothai/unsloth.git",
+    "openpyxl==3.1.5",
+]
+    [project.optional-dependencies]
+
+
+[tool]
+    [tool.ruff]
+    target-version = "py310"
+    line-length    = 130
+    ignore         = ["E402", "F841", "F401", "E203"]
+
+    [tool.isort]
+    profile = "ruff"
+
+    [tool.hatch.version]
+    path = "unsloth_train/__init__.py"
+
+    [tool.coverage.run]
+    omit = ["*template*", "test/*", "*__init__.py*"]
+
+    [tool.coverage.report]
+    precision = 2
+    fail_under = 80.0
+    show_missing = true
+    skip_covered = true
+    exclude_lines = [
+        "# pragma: no cover",
+        "@abc.abstractclassmethod",
+        "@abc.abstractmethod",
+        "pass",
+        "if __name__ == *",
+        "def __repr__",
+        "if TYPE_CHECKING",
+    ]

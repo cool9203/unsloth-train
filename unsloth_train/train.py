@@ -18,13 +18,14 @@ def train_model(
     load_in_4bit: bool = True,  # Use 4bit quantization to reduce memory usage. Can be False.
     instruction_part: str = None,
     response_part: str = None,
+    num_train_epochs: int = 1,
 ):
     import torch
-    from datasets import load_dataset
+    from make_dataset import make_from_qa
     from transformers import DataCollatorForSeq2Seq, TrainingArguments
     from trl import SFTTrainer
     from unsloth import FastLanguageModel, is_bfloat16_supported
-    from unsloth.chat_templates import get_chat_template, standardize_sharegpt, train_on_responses_only
+    from unsloth.chat_templates import get_chat_template, train_on_responses_only
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         # model_name="unsloth/Llama-3.2-1B-Instruct",  # or choose "unsloth/Llama-3.2-1B-Instruct"
@@ -79,8 +80,7 @@ def train_model(
             "text": texts,
         }
 
-    dataset = load_dataset("mlabonne/FineTome-100k", split="train")
-    dataset = standardize_sharegpt(dataset)
+    dataset = make_from_qa(dataset_path=dataset_path)
     dataset = dataset.map(
         formatting_prompts_func,
         batched=True,
@@ -99,8 +99,8 @@ def train_model(
             per_device_train_batch_size=2,
             gradient_accumulation_steps=4,
             warmup_steps=5,
-            # num_train_epochs = 1, # Set this for 1 full training run.
-            max_steps=60,
+            num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
+            # max_steps=60,
             learning_rate=2e-4,
             fp16=not is_bfloat16_supported(),
             bf16=is_bfloat16_supported(),
@@ -147,9 +147,11 @@ def train_model(
 if __name__ == "__main__":
     train_model(
         model_name="unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit",
-        dataset_path="",
+        dataset_path="/mnt/d/dataset/finance/current-20240925T053832Z-001/金科QA整理-20240926.xlsx",
+        max_seq_length=8192,
         save_path="models",
         save_model_name="test",
         save_model_format="gguf",
         quantization_method="f16",
+        num_train_epochs=1,
     )

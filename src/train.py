@@ -3,46 +3,32 @@
 from pathlib import Path
 from typing import Union
 
-import torch
-from datasets import load_dataset
-from transformers import DataCollatorForSeq2Seq, TrainingArguments
-from trl import SFTTrainer
-from unsloth import FastLanguageModel, is_bfloat16_supported
-from unsloth.chat_templates import get_chat_template, standardize_sharegpt, train_on_responses_only
-
-max_seq_length = 2048  # Choose any! We auto support RoPE Scaling internally!
-dtype = None  # None for auto detection. Float16 for Tesla T4, V100, Bfloat16 for Ampere+
-load_in_4bit = True  # Use 4bit quantization to reduce memory usage. Can be False.
-seed = 3407
-
-# 4bit pre quantized models we support for 4x faster downloading + no OOMs.
-fourbit_models = [
-    "unsloth/Meta-Llama-3.1-8B-bnb-4bit",  # Llama-3.1 2x faster
-    "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
-    "unsloth/Meta-Llama-3.1-70B-bnb-4bit",
-    "unsloth/Meta-Llama-3.1-405B-bnb-4bit",  # 4bit for 405b!
-    "unsloth/Mistral-Small-Instruct-2409",  # Mistral 22b 2x faster!
-    "unsloth/mistral-7b-instruct-v0.3-bnb-4bit",
-    "unsloth/Phi-3.5-mini-instruct",  # Phi-3.5 2x faster!
-    "unsloth/Phi-3-medium-4k-instruct",
-    "unsloth/gemma-2-9b-bnb-4bit",
-    "unsloth/gemma-2-27b-bnb-4bit",  # Gemma 2x faster!
-    "unsloth/Llama-3.2-1B-bnb-4bit",  # NEW! Llama 3.2 models
-    "unsloth/Llama-3.2-1B-Instruct-bnb-4bit",
-    "unsloth/Llama-3.2-3B-bnb-4bit",
-    "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
-]  # More models at https://huggingface.co/unsloth
-
 
 def train_model(
     save_path: Union[str, Path],
     save_model_name: str,
-    model_format: str,
+    model_name: str,
+    dataset_path: str,
+    save_model_format: str,
     quantization_method: str,
+    seed: int = 3407,
+    max_seq_length: int = 2048,
+    chat_template_name: str = None,
+    dtype: str = None,  # None for auto detection. Float16 for Tesla T4, V100, Bfloat16 for Ampere+
+    load_in_4bit: bool = True,  # Use 4bit quantization to reduce memory usage. Can be False.
+    instruction_part: str = None,
+    response_part: str = None,
 ):
+    import torch
+    from datasets import load_dataset
+    from transformers import DataCollatorForSeq2Seq, TrainingArguments
+    from trl import SFTTrainer
+    from unsloth import FastLanguageModel, is_bfloat16_supported
+    from unsloth.chat_templates import get_chat_template, standardize_sharegpt, train_on_responses_only
+
     model, tokenizer = FastLanguageModel.from_pretrained(
         # model_name="unsloth/Llama-3.2-1B-Instruct",  # or choose "unsloth/Llama-3.2-1B-Instruct"
-        model_name="unsloth/Llama-3.2-1B-bnb-4bit",
+        model_name=model_name,
         max_seq_length=max_seq_length,
         dtype=dtype,
         load_in_4bit=load_in_4bit,
@@ -71,9 +57,19 @@ def train_model(
         loftq_config=None,  # And LoftQ
     )
 
+    _model_name = model_name.lower()
+    if "llama-3.1" in _model_name or "llama3.1" in _model_name:
+        chat_template_name = "llama-3.1"
+    elif "llama-3.2" in _model_name or "llama3.2" in _model_name:
+        chat_template_name = "llama-3.2"
+    elif "qwen-2.5" in _model_name or "qwen2.5" in _model_name:
+        chat_template_name = "qwen-2.5"
+    elif not chat_template_name:
+        raise ValueError(f"Model of '{model_name}' not support auto select chat_template")
+
     tokenizer = get_chat_template(
         tokenizer,
-        chat_template="llama-3.1",
+        chat_template=chat_template_name,
     )
 
     def formatting_prompts_func(examples):
@@ -117,17 +113,26 @@ def train_model(
         ),
     )
 
-    trainer = train_on_responses_only(
-        trainer,
-        instruction_part="<|start_header_id|>user<|end_header_id|>\n\n",
-        response_part="<|start_header_id|>assistant<|end_header_id|>\n\n",
-    )
+    if chat_template_name == "llama-3.1":
+        trainer = train_on_responses_only(
+            trainer,
+            instruction_part="<|start_header_id|>user<|end_header_id|>\n\n",
+            response_part="<|start_header_id|>assistant<|end_header_id|>\n\n",
+        )
+    elif chat_template_name == "qwen-2.5":
+        trainer = train_on_responses_only(
+            trainer,
+            instruction_part="<|im_start|>user\n",
+            response_part="<|im_start|>assistant\n",
+        )
+    elif not instruction_part and not response_part:
+        raise ValueError(f"Model of '{model_name}' not support auto select instruction_part and response_part")
 
     trainer_stats = trainer.train()
 
     save_model_path = Path(save_path, save_model_name)
     save_model_path.mkdir(parents=True, exist_ok=True)
-    if model_format.lower() == "gguf":
+    if save_model_format.lower() == "gguf":
         model.save_pretrained_gguf(
             f"{str(save_model_path)}",
             tokenizer,
@@ -141,8 +146,10 @@ def train_model(
 
 if __name__ == "__main__":
     train_model(
+        model_name="unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit",
+        dataset_path="",
         save_path="models",
         save_model_name="test",
-        model_format="gguf",
+        save_model_format="gguf",
         quantization_method="f16",
     )

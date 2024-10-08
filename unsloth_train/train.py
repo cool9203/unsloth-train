@@ -143,6 +143,7 @@ def train_model(
             f"{str(save_model_path)}",
             tokenizer,
             quantization_method=quantization_method,
+            maximum_memory_usage=0.75,
         )
     else:
         # Save - Transformers

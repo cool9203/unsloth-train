@@ -2,8 +2,13 @@
 
 from pathlib import Path
 from typing import Union
+from unittest.mock import patch
+
+import unsloth.save
+from _patch import create_ollama_modelfile
 
 
+@patch.object(unsloth.save, "create_ollama_modelfile", create_ollama_modelfile)
 def train_model(
     save_path: Union[str, Path],
     save_model_name: str,

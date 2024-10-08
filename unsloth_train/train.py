@@ -19,9 +19,10 @@ def train_model(
     instruction_part: str = None,
     response_part: str = None,
     num_train_epochs: int = 1,
+    learning_rate: float = 2e-4,
 ):
     import torch
-    from make_dataset import make_from_qa
+    from make_dataset import make_from_qa, make_from_qa_format_3
     from transformers import DataCollatorForSeq2Seq, TrainingArguments
     from trl import SFTTrainer
     from unsloth import FastLanguageModel, is_bfloat16_supported
@@ -80,7 +81,7 @@ def train_model(
             "text": texts,
         }
 
-    dataset = make_from_qa(dataset_path=dataset_path)
+    dataset = make_from_qa_format_3(dataset_path=dataset_path)
     dataset = dataset.map(
         formatting_prompts_func,
         batched=True,
@@ -101,7 +102,7 @@ def train_model(
             warmup_steps=5,
             num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
             # max_steps=60,
-            learning_rate=2e-4,
+            learning_rate=learning_rate,
             fp16=not is_bfloat16_supported(),
             bf16=is_bfloat16_supported(),
             logging_steps=1,
@@ -145,13 +146,16 @@ def train_model(
 
 
 if __name__ == "__main__":
+    learning_rate = 7e-5
+    epoch = 3
     train_model(
         model_name="unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit",
-        dataset_path="/mnt/d/dataset/finance/current-20240925T053832Z-001/金科QA整理-20240926.xlsx",
+        dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
         max_seq_length=8192,
         save_path="models",
-        save_model_name="test",
+        save_model_name=f"test-format_3-epoch_{epoch}-lr_{str(learning_rate).replace('-', '')}",
         save_model_format="gguf",
         quantization_method="f16",
-        num_train_epochs=1,
+        num_train_epochs=epoch,
+        learning_rate=learning_rate,
     )

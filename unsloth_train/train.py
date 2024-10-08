@@ -97,7 +97,7 @@ def train_model(
         dataset_num_proc=2,
         packing=False,  # Can make training 5x faster for short sequences.
         args=TrainingArguments(
-            per_device_train_batch_size=2,
+            per_device_train_batch_size=1,
             gradient_accumulation_steps=4,
             warmup_steps=5,
             num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
@@ -146,14 +146,15 @@ def train_model(
 
 
 if __name__ == "__main__":
-    learning_rate = 7e-5
-    epoch = 3
+    learning_rate = 7e-6
+    epoch = 5
+    max_seq_length = 1024
     train_model(
-        model_name="unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit",
+        model_name="unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
         dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
-        max_seq_length=8192,
+        max_seq_length=max_seq_length,
         save_path="models",
-        save_model_name=f"test-format_3-epoch_{epoch}-lr_{str(learning_rate).replace('-', '')}",
+        save_model_name=f"test-qwen-2.5-7B-format_3-epoch_{epoch}-lr_{str(learning_rate).replace('-', '')}-context_length_{max_seq_length}",
         save_model_format="gguf",
         quantization_method="f16",
         num_train_epochs=epoch,

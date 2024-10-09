@@ -162,7 +162,7 @@ if __name__ == "__main__":
         save_path="models",
         save_model_name=f"test-qwen-2.5-7B-format_3-epoch_{epoch}-lr_{str(learning_rate).replace('-', '')}-context_length_{max_seq_length}",
         save_model_format="gguf",
-        quantization_method="f16",
+        quantization_method=["f16", "q4_k_m"],
         num_train_epochs=epoch,
         learning_rate=learning_rate,
     )

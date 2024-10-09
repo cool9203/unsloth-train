@@ -3,6 +3,7 @@
 from __future__ import print_function
 
 import string
+from pathlib import Path
 
 
 class SafeFormatter(string.Formatter):
@@ -48,16 +49,17 @@ def create_ollama_modelfile(tokenizer, gguf_location):
 
     modelfile = modelfile.replace("{{", "⚫@✅#🦥").replace("}}", "⚡@🦥#⛵")
 
+    model_name = Path(gguf_location).name
     if "__EOS_TOKEN__" in modelfile:
         modelfile = SafeFormatter().format(
             modelfile,
-            __FILE_LOCATION__=gguf_location,
+            __FILE_LOCATION__=f"./{model_name}",
             __EOS_TOKEN__=tokenizer.eos_token,
         )
     else:
         modelfile = SafeFormatter().format(
             modelfile,
-            __FILE_LOCATION__=gguf_location,
+            __FILE_LOCATION__=f"./{model_name}",
         )
 
     modelfile = modelfile.replace("⚫@✅#🦥", "{{").replace("⚡@🦥#⛵", "}}").rstrip()

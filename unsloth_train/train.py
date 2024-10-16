@@ -2,13 +2,10 @@
 
 from pathlib import Path
 from typing import Union
-from unittest.mock import patch
 
-import unsloth.save
-from _patch import create_ollama_modelfile
+from unsloth import unsloth_train
 
 
-@patch.object(unsloth.save, "create_ollama_modelfile", create_ollama_modelfile)
 def train_model(
     save_path: Union[str, Path],
     save_model_name: str,
@@ -134,7 +131,7 @@ def train_model(
     elif not instruction_part and not response_part:
         raise ValueError(f"Model of '{model_name}' not support auto select instruction_part and response_part")
 
-    trainer_stats = trainer.train()
+    trainer_stats = unsloth_train(trainer)
 
     save_model_path = Path(save_path, save_model_name)
     save_model_path.mkdir(parents=True, exist_ok=True)
@@ -153,14 +150,14 @@ def train_model(
 
 if __name__ == "__main__":
     learning_rate = 7e-6
-    epoch = 5
+    epoch = 3
     max_seq_length = 1024
     train_model(
-        model_name="unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
+        model_name="shenzhi-wang/Llama3.1-8B-Chinese-Chat",
         dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
         max_seq_length=max_seq_length,
-        save_path="models",
-        save_model_name=f"test-qwen-2.5-7B-format_3-epoch_{epoch}-lr_{str(learning_rate).replace('-', '')}-context_length_{max_seq_length}",
+        save_path="/mnt/d/models",
+        save_model_name=f"Llama3.1-8B-Chinese-Chat-context_length_{max_seq_length}",
         save_model_format="gguf",
         quantization_method=["f32", "q4_k_m"],
         num_train_epochs=epoch,

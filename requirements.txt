@@ -1,5 +1,5 @@
 pre-commit
 torch==2.4.0
 numpy==1.26.4
-unsloth[cu121-ampere-torch240] @ git+https://github.com/unslothai/unsloth.git@38663b0
+unsloth[cu121-ampere-torch240] @ git+https://github.com/unslothai/unsloth.git@9ca13b836f647e67d6e9ca8bb712403ffaadd607
 openpyxl==3.1.5

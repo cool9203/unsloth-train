@@ -67,6 +67,7 @@ def make_from_qa_format_3(
     dataset_path: PathLike,
     question_headers: List[str] = ["question", "q", "query"],
     answer_headers: List[str] = ["answer", "a", "response"],
+    max_document_length: int = None,
     seed: int = 3407,
     **kwds,
 ):
@@ -109,9 +110,9 @@ def make_from_qa_format_3(
 
         for i in range(len(queries)):
             documents = list()
-            max_document_length = rng.randint(1, 10)
+            _max_document_length = max_document_length if max_document_length else rng.randint(1, 10)
             add_current_document = False
-            while len(documents) < max_document_length:
+            while len(documents) < _max_document_length:
                 # Add current document
                 if not add_current_document and rng.randint(1, 10) <= 5:
                     documents.append(_format_qa(query=queries[i], response=responses[i]))

@@ -171,3 +171,4 @@ cython_debug/
 llama.cpp
 outputs
 models
+llama.cpp

@@ -2,10 +2,15 @@
 
 from pathlib import Path
 from typing import Union
+from unittest.mock import patch
 
+import unsloth.tokenizer_utils
 from unsloth import unsloth_train
 
+from unsloth_train._patch import fix_chat_template
 
+
+@patch.object(unsloth.tokenizer_utils, "fix_chat_template", fix_chat_template)
 def train_model(
     save_path: Union[str, Path],
     save_model_name: str,

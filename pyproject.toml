@@ -9,12 +9,12 @@ dynamic = ["version"]
 authors = [{ name = "yoga", email = "ychsu@iii.org.tw" }]
 description = "Train LLM with unsloth"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
-    "torch==2.4.0",
     "numpy==1.26.4",
-    "unsloth[cu121-ampere-torch240] @ git+https://github.com/unslothai/unsloth.git@9ca13b836f647e67d6e9ca8bb712403ffaadd607",
+    "unsloth[cu124-ampere-torch250] @ git+https://github.com/unslothai/unsloth.git",
+    "unsloth-zoo",
     "openpyxl==3.1.5",
 ]
     [project.optional-dependencies]
@@ -28,6 +28,9 @@ dependencies = [
 
     [tool.isort]
     profile = "ruff"
+
+    [tool.hatch.metadata]
+    allow-direct-references = true
 
     [tool.hatch.version]
     path = "unsloth_train/__init__.py"

@@ -5,7 +5,6 @@ from typing import Union
 from unittest.mock import patch
 
 import unsloth.tokenizer_utils
-from unsloth import unsloth_train
 
 from unsloth_train._patch import fix_chat_template
 
@@ -29,11 +28,12 @@ def train_model(
     learning_rate: float = 2e-4,
 ):
     import torch
-    from make_dataset import make_from_qa, make_from_qa_format_3
     from transformers import DataCollatorForSeq2Seq, TrainingArguments
     from trl import SFTTrainer
     from unsloth import FastLanguageModel, is_bfloat16_supported
     from unsloth.chat_templates import get_chat_template, train_on_responses_only
+
+    from unsloth_train.make_dataset import make_from_qa, make_from_qa_format_3, make_from_qa_format_4
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         # model_name="unsloth/Llama-3.2-1B-Instruct",  # or choose "unsloth/Llama-3.2-1B-Instruct"
@@ -67,10 +67,8 @@ def train_model(
     )
 
     _model_name = model_name.lower()
-    if "llama-3.1" in _model_name or "llama3.1" in _model_name:
+    if "llama-3.1" in _model_name or "llama3.1" in _model_name or "llama-3.2" in _model_name or "llama3.2" in _model_name:
         chat_template_name = "llama-3.1"
-    elif "llama-3.2" in _model_name or "llama3.2" in _model_name:
-        chat_template_name = "llama-3.2"
     elif "qwen-2.5" in _model_name or "qwen2.5" in _model_name:
         chat_template_name = "qwen-2.5"
     elif not chat_template_name:
@@ -88,7 +86,10 @@ def train_model(
             "text": texts,
         }
 
-    dataset = make_from_qa_format_3(dataset_path=dataset_path)
+    dataset = make_from_qa_format_4(
+        dataset_path=dataset_path,
+        max_document_length=5,
+    )
     dataset = dataset.map(
         formatting_prompts_func,
         batched=True,
@@ -136,7 +137,7 @@ def train_model(
     elif not instruction_part and not response_part:
         raise ValueError(f"Model of '{model_name}' not support auto select instruction_part and response_part")
 
-    trainer_stats = unsloth_train(trainer)
+    trainer_stats = trainer.train()
 
     save_model_path = Path(save_path, save_model_name)
     save_model_path.mkdir(parents=True, exist_ok=True)
@@ -158,11 +159,11 @@ if __name__ == "__main__":
     epoch = 3
     max_seq_length = 1024
     train_model(
-        model_name="shenzhi-wang/Llama3.1-8B-Chinese-Chat",
+        model_name="unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
         dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
         max_seq_length=max_seq_length,
         save_path="/mnt/d/models",
-        save_model_name=f"Llama3.1-8B-Chinese-Chat-context_length_{max_seq_length}",
+        save_model_name=f"Llama3.2-3B-Instruct-context_length_{max_seq_length}",
         save_model_format="gguf",
         quantization_method=["f32", "q4_k_m"],
         num_train_epochs=epoch,

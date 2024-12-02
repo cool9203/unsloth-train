@@ -89,6 +89,8 @@ def train_model(
     dataset = make_from_qa_format_4(
         dataset_path=dataset_path,
         max_document_length=5,
+        not_answering_proportion=0.0,
+        bm25=True,
     )
     dataset = dataset.map(
         formatting_prompts_func,
@@ -157,7 +159,7 @@ def train_model(
 if __name__ == "__main__":
     learning_rate = 7e-6
     epoch = 10
-    max_seq_length = 4096
+    max_seq_length = 2048
     # train_model(
     #     model_name="shenzhi-wang/Llama3.1-8B-Chinese-Chat",
     #     dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",

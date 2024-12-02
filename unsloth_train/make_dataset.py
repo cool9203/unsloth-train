@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import hashlib
 import random
 from os import PathLike
 from pathlib import Path
@@ -16,7 +17,10 @@ from typing import (
 
 import datasets
 import pandas as pd
+import tqdm
 from datasets import Dataset
+
+_bm25_model_cache = dict()
 
 
 def load_dataset(
@@ -46,23 +50,40 @@ def bm25_search(
     from gensim.similarities import SparseMatrixSimilarity
 
     bm25_result: List[Tuple[int, str, float]] = list()
+    corpus_hash_value = hashlib.sha256(("\n".join(corpus)).encode())
 
-    # Word segment with jieba
-    _corpus = list()
-    for sentence in corpus:
-        _corpus.append([w for w in jieba.cut(sentence) if w not in stop_word])
+    if corpus_hash_value in _bm25_model_cache:
+        _corpus = _bm25_model_cache[corpus_hash_value]["corpus"]
+        dictionary = _bm25_model_cache[corpus_hash_value]["dictionary"]
+        query_model = _bm25_model_cache[corpus_hash_value]["query_model"]
+        document_model = _bm25_model_cache[corpus_hash_value]["document_model"]
+        bow_corpus = _bm25_model_cache[corpus_hash_value]["bow_corpus"]
+        bm25_corpus = _bm25_model_cache[corpus_hash_value]["bm25_corpus"]
+    else:
+        # Word segment with jieba
+        _corpus = list()
+        for sentence in corpus:
+            _corpus.append([w for w in jieba.cut(sentence) if w not in stop_word])
 
-    # Create model
-    dictionary = Dictionary(_corpus)  # fit dictionary
-    query_model = TfidfModel(dictionary=dictionary, smartirs="bnn")  # enforce binary weights
-    document_model = OkapiBM25Model(dictionary=dictionary)  # fit bm25 model
-    bow_corpus = [dictionary.doc2bow(line) for line in _corpus]  # convert corpus to BoW format
-    bm25_corpus = document_model[bow_corpus]
+        # Create model
+        dictionary = Dictionary(_corpus)  # fit dictionary
+        query_model = TfidfModel(dictionary=dictionary, smartirs="bnn")  # enforce binary weights
+        document_model = OkapiBM25Model(dictionary=dictionary)  # fit bm25 model
+        bow_corpus = [dictionary.doc2bow(line) for line in _corpus]  # convert corpus to BoW format
+        bm25_corpus = document_model[bow_corpus]
+        _bm25_model_cache[corpus_hash_value] = {
+            "corpus": _corpus,
+            "dictionary": dictionary,
+            "query_model": query_model,
+            "document_model": document_model,
+            "bow_corpus": bow_corpus,
+            "bm25_corpus": bm25_corpus,
+        }
+
+    # Querying with bm25
     index = SparseMatrixSimilarity(
         bm25_corpus, num_docs=len(_corpus), num_terms=len(dictionary), normalize_queries=False, normalize_documents=False
     )
-
-    # Querying with bm25
     query_segment = [w for w in jieba.cut(query) if w not in stop_word]
     bow_query = dictionary.doc2bow(query_segment)
     bm25_query = query_model[bow_query]
@@ -265,7 +286,7 @@ def make_from_qa_format_4(
         "reference": [],
         "reflection": [],
     }
-    for i, is_positive in positive_indexes + negative_indexes:
+    for i, is_positive in tqdm.tqdm(positive_indexes + negative_indexes):
         question = origin_dataset.iloc[i][question_header]
         answer = origin_dataset.iloc[i][answer_header]
         new_dataset["question"].append(question)

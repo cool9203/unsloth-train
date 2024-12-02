@@ -16,6 +16,8 @@ dependencies = [
     "unsloth[cu124-ampere-torch250] @ git+https://github.com/unslothai/unsloth.git",
     "unsloth-zoo",
     "openpyxl==3.1.5",
+    "jieba",
+    "gensim",
 ]
     [project.optional-dependencies]
 

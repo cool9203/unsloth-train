@@ -156,14 +156,25 @@ def train_model(
 
 if __name__ == "__main__":
     learning_rate = 7e-6
-    epoch = 3
-    max_seq_length = 1024
+    epoch = 10
+    max_seq_length = 4096
+    # train_model(
+    #     model_name="shenzhi-wang/Llama3.1-8B-Chinese-Chat",
+    #     dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
+    #     max_seq_length=max_seq_length,
+    #     save_path="/mnt/d/models",
+    #     save_model_name=f"Llama3.1-8B-Chinese-Chat-finance-qa-v2-context_length_{max_seq_length}",
+    #     save_model_format="gguf",
+    #     quantization_method=["f32", "q4_k_m"],
+    #     num_train_epochs=epoch,
+    #     learning_rate=learning_rate,
+    # )
     train_model(
         model_name="unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
         dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
         max_seq_length=max_seq_length,
         save_path="/mnt/d/models",
-        save_model_name=f"Llama3.2-3B-Instruct-context_length_{max_seq_length}",
+        save_model_name=f"Llama3.2-3B-Instruct-v2-context_length_{max_seq_length}",
         save_model_format="gguf",
         quantization_method=["f32", "q4_k_m"],
         num_train_epochs=epoch,

@@ -3,7 +3,16 @@
 import random
 from os import PathLike
 from pathlib import Path
-from typing import List
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import datasets
 import pandas as pd
@@ -24,8 +33,48 @@ def load_dataset(
     return dataset
 
 
-def preprocess_dataset() -> pd.DataFrame:
-    pass
+def bm25_search(
+    corpus: List[str],
+    query: str,
+    stop_word: Sequence = {" "},
+    k: int = None,
+    threshold: float = None,
+) -> List[Tuple[int, str, float]]:
+    import jieba
+    from gensim.corpora import Dictionary
+    from gensim.models import OkapiBM25Model, TfidfModel
+    from gensim.similarities import SparseMatrixSimilarity
+
+    bm25_result: List[Tuple[int, str, float]] = list()
+
+    # Word segment with jieba
+    _corpus = list()
+    for sentence in corpus:
+        _corpus.append([w for w in jieba.cut(sentence) if w not in stop_word])
+
+    # Create model
+    dictionary = Dictionary(_corpus)  # fit dictionary
+    query_model = TfidfModel(dictionary=dictionary, smartirs="bnn")  # enforce binary weights
+    document_model = OkapiBM25Model(dictionary=dictionary)  # fit bm25 model
+    bow_corpus = [dictionary.doc2bow(line) for line in _corpus]  # convert corpus to BoW format
+    bm25_corpus = document_model[bow_corpus]
+    index = SparseMatrixSimilarity(
+        bm25_corpus, num_docs=len(_corpus), num_terms=len(dictionary), normalize_queries=False, normalize_documents=False
+    )
+
+    # Querying with bm25
+    query_segment = [w for w in jieba.cut(query) if w not in stop_word]
+    bow_query = dictionary.doc2bow(query_segment)
+    bm25_query = query_model[bow_query]
+    scores = index[bm25_query]  # calculate similarity of query to each doc from bow_corpus
+    sorted_scores = sorted([(i, 1 / s if s > 0 else 1.0) for i, s in enumerate(scores)], key=lambda tup: tup[1])  # small to large
+    for i, score in sorted_scores:
+        if (k is not None and len(bm25_result) == k) or (threshold is not None and score > threshold):
+            break
+
+        bm25_result.append((i, corpus[i], score))
+
+    return bm25_result
 
 
 def make_from_qa(
@@ -168,8 +217,11 @@ def make_from_qa_format_4(
     not_answering_proportion: float = 0.6,
     not_answering_response: str = "很抱歉我沒有這問題的相關答案。",
     seed: int = 3407,
+    bm25: bool = False,
+    extra_bm25_result: bool = False,
     **kwds,
 ):
+    report_once_status = False
     origin_dataset = load_dataset(dataset_path)
     rng = random.Random(seed)
 
@@ -223,22 +275,68 @@ def make_from_qa_format_4(
         references = list()
         _max_document_length = max_document_length if max_document_length else rng.randint(1, 10)
 
+        bm25_results: List[Tuple[int, str, float]] = (
+            bm25_search(
+                corpus=origin_dataset[question_header].tolist(),
+                query=question,
+                k=_max_document_length * 2,
+            )
+            if bm25
+            else []
+        )
+
         if is_positive:
             references.append(_format_qa(query=question, response=answer))
 
-        while len(references) < _max_document_length:
-            # Random select qa
-            index = rng.randint(0, len(origin_dataset) - 1)
-            if index == i:
-                continue
-            references.append(
-                _format_qa(
-                    query=origin_dataset.iloc[index][question_header],
-                    response=origin_dataset.iloc[index][answer_header],
+        if bm25 and not extra_bm25_result:
+            print("Run bm25") if not report_once_status else None
+            for index, _, score in bm25_results:
+                if len(references) >= _max_document_length:
+                    break
+                if index == i:
+                    continue
+                references.append(
+                    _format_qa(
+                        query=origin_dataset.iloc[index][question_header],
+                        response=origin_dataset.iloc[index][answer_header],
+                    )
                 )
-            )
+        else:
+            print("Run random") if not report_once_status else None
+            while len(references) < _max_document_length:
+                # Random select qa
+                index = rng.randint(0, len(origin_dataset) - 1)
+                if index == i:
+                    continue
+                references.append(
+                    _format_qa(
+                        query=origin_dataset.iloc[index][question_header],
+                        response=origin_dataset.iloc[index][answer_header],
+                    )
+                )
         rng.shuffle(references)
         new_dataset["reference"].append(references)
+
+        if bm25 and extra_bm25_result:
+            print("Run extra-bm25") if not report_once_status else None
+            references = list()
+            new_dataset["question"].append(question)
+            new_dataset["answer"].append(answer if is_positive else not_answering_response)
+            new_dataset["reflection"].append("")
+            for index, _, score in bm25_results:
+                if len(references) >= _max_document_length:
+                    break
+                if index == i:
+                    continue
+                references.append(
+                    _format_qa(
+                        query=origin_dataset.iloc[index][question_header],
+                        response=origin_dataset.iloc[index][answer_header],
+                    )
+                )
+            rng.shuffle(references)
+            new_dataset["reference"].append(references)
+        report_once_status = True
 
     dataset = Dataset.from_pandas(df=pd.DataFrame(new_dataset))
 

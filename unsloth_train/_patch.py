@@ -2,7 +2,13 @@
 
 from __future__ import print_function
 
+import torch
 from unsloth.tokenizer_utils import logger
+from unsloth_zoo.vision_utils import (
+    _get_dtype,
+    get_padding_tokens_ids,
+    process_vision_info,
+)
 
 
 def _fix_chat_template(chat_template):
@@ -90,3 +96,77 @@ def fix_chat_template(tokenizer):
         pass
     pass
     return chat_template
+
+
+class UnslothVisionDataCollator:
+    __slots__ = "padding_token_ids", "dtype", "ignore_index", "processor"
+
+    def __init__(self, model, processor, ignore_index=-100):
+        self.padding_token_ids = get_padding_tokens_ids(processor)
+        self.dtype = _get_dtype(
+            model.config.torch_dtype if hasattr(model.config, "torch_dtype") else model.get_input_embeddings().weight.dtype
+        )
+        self.ignore_index = ignore_index
+        self.processor = processor
+        return
+
+    def __call__(self, examples):
+        # [TODO] Support non image inputs as well
+        # The issue is batch = self.processor( forces tensors to be returned and not None.
+        texts = []
+        images = []
+        for example in examples:
+            messages = example["messages"]
+            message = self.processor.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            # Dataset with 2 columns messages / images
+            if "images" in example:
+                image = example["images"][0]
+            else:
+                image, video = process_vision_info(messages)
+            texts.append(message)
+            images.append(image)
+        pass
+
+        # Tokenize the texts and process the images
+        batch = self.processor.tokenizer(
+            text=texts,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+        )
+
+        # FIXME: Support image processor
+        # batch = self.processor.tokenizer(
+        #     text=texts,
+        #     images=images,
+        #     padding=True,
+        #     # [TODO] Truncating to max_seq_length does NOT work for VLMs
+        #     truncation=True,
+        #     return_tensors="pt",
+        # )
+        batch.pop("token_type_ids", None)
+
+        # Pixtral accepts multiple images, so we have to cast it individually
+        if "pixel_values" in batch:
+            pixel_values = batch["pixel_values"]
+            if type(pixel_values) is list:
+                for j, pixel_value_j in enumerate(pixel_values):
+                    if type(pixel_value_j) is list:
+                        for k, pixel_value_k in enumerate(pixel_value_j):
+                            pixel_value_j[k] = pixel_value_k.to(self.dtype)
+                    else:
+                        pixel_values[j] = pixel_value_j.to(self.dtype)
+                pass
+                batch["pixel_values"] = pixel_values
+            else:
+                batch["pixel_values"] = batch["pixel_values"].to(self.dtype)
+
+        # Mask image tokens and pad tokens
+        labels = batch["input_ids"].clone()
+        labels[torch.isin(labels, self.padding_token_ids)] = self.ignore_index
+        batch["labels"] = labels
+        return batch

@@ -10,6 +10,7 @@ A use unsloth to train llm model script
 # . ./.venv/bin/activate
 
 python -m pip install --upgrade pip wheel setuptools
+pip install torch # Need choice your cuda version
 pip install -r requirements.txt
 ```
 
@@ -17,6 +18,12 @@ pip install -r requirements.txt
 
 ```bash
 python unsloth_train/train.py
+```
+
+## Train vision model
+
+```bash
+python unsloth_train/train_vision.py
 ```
 
 ## Change setting and data path

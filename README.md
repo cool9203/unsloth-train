@@ -29,3 +29,9 @@ python unsloth_train/train_vision.py
 ## Change setting and data path
 
 At `unsloth_train/train.py` line 149-161
+
+## Troubleshooting
+
+### OSError: [Errno 24] Too many open files
+
+Reference: https://stackoverflow.com/a/39537952

@@ -35,6 +35,8 @@ def train_model(
 
     from unsloth_train.make_dataset import make_from_qa, make_from_qa_format_3, make_from_qa_format_4
 
+    # torch.backends.cuda.enable_cudnn_sdp(False)  # Fix newest nvidia gpu, like A6000
+
     model, tokenizer = FastLanguageModel.from_pretrained(
         # model_name="unsloth/Llama-3.2-1B-Instruct",  # or choose "unsloth/Llama-3.2-1B-Instruct"
         model_name=model_name,
@@ -143,17 +145,20 @@ def train_model(
 
     save_model_path = Path(save_path, save_model_name)
     save_model_path.mkdir(parents=True, exist_ok=True)
-    if save_model_format.lower() == "gguf":
+
+    try:
         model.save_pretrained_gguf(
             f"{str(save_model_path)}",
             tokenizer,
             quantization_method=quantization_method,
             maximum_memory_usage=0.75,
         )
-    else:
-        # Save - Transformers
-        model.save_pretrained(f"{str(save_model_path)}/lora_model")  # Local saving
-        tokenizer.save_pretrained("lora_model")
+    except Exception:
+        pass
+    # Save - Transformers on local
+    model.save_pretrained(f"{str(save_model_path)}/lora_model")
+    tokenizer.save_pretrained(f"{str(save_model_path)}/lora_model")
+    model.save_pretrained_merged(f"{str(save_model_path)}/transformers", tokenizer)
 
 
 if __name__ == "__main__":

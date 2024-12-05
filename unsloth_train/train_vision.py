@@ -123,8 +123,10 @@ def train_model(
 
     save_model_path = Path(save_path, save_model_name)
     save_model_path.mkdir(parents=True, exist_ok=True)
-    # Save - Transformers
-    model.save_pretrained_merged(f"{str(save_model_path)}/transformers", tokenizer)  # Local saving
+    # Save - Transformers on local
+    model.save_pretrained(f"{str(save_model_path)}/lora_model")
+    tokenizer.save_pretrained(f"{str(save_model_path)}/lora_model")
+    model.save_pretrained_merged(f"{str(save_model_path)}/transformers", tokenizer)
 
 
 if __name__ == "__main__":

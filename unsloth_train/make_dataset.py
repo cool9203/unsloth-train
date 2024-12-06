@@ -300,7 +300,6 @@ def make_from_qa_format_4(
             bm25_search(
                 corpus=origin_dataset[question_header].tolist(),
                 query=question,
-                k=_max_document_length * 2,
             )
             if bm25
             else []
@@ -314,7 +313,7 @@ def make_from_qa_format_4(
             for index, _, score in bm25_results:
                 if len(references) >= _max_document_length:
                     break
-                if index == i:
+                if index == i or (not is_positive and not score == 1.0):
                     continue
                 references.append(
                     _format_qa(

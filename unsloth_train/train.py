@@ -91,7 +91,7 @@ def train_model(
     dataset = make_from_qa_format_4(
         dataset_path=dataset_path,
         max_document_length=5,
-        not_answering_proportion=0.0,
+        not_answering_proportion=1.0,
         bm25=True,
     )
     dataset = dataset.map(

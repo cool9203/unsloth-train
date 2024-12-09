@@ -158,32 +158,20 @@ def train_model(
     # Save - Transformers on local
     model.save_pretrained(f"{str(save_model_path)}/lora_model")
     tokenizer.save_pretrained(f"{str(save_model_path)}/lora_model")
-    model.save_pretrained_merged(f"{str(save_model_path)}/transformers", tokenizer)
 
 
 if __name__ == "__main__":
     learning_rate = 7e-6
-    epoch = 10
-    max_seq_length = 2048
-    # train_model(
-    #     model_name="shenzhi-wang/Llama3.1-8B-Chinese-Chat",
-    #     dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
-    #     max_seq_length=max_seq_length,
-    #     save_path="/mnt/d/models",
-    #     save_model_name=f"Llama3.1-8B-Chinese-Chat-finance-qa-v2-context_length_{max_seq_length}",
-    #     save_model_format="gguf",
-    #     quantization_method=["f32", "q4_k_m"],
-    #     num_train_epochs=epoch,
-    #     learning_rate=learning_rate,
-    # )
+    epoch = 5
+    max_seq_length = 4096
     train_model(
-        model_name="unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
+        model_name="shenzhi-wang/Llama3.1-8B-Chinese-Chat",
         dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
         max_seq_length=max_seq_length,
         save_path="/mnt/d/models",
-        save_model_name=f"Llama3.2-3B-Instruct-v2-context_length_{max_seq_length}",
+        save_model_name=f"Llama3.1-8B-Chinese-Chat-finance-qa-v3-context_length_{max_seq_length}",
         save_model_format="gguf",
-        quantization_method=["f32", "q4_k_m"],
+        quantization_method=["q4_k_m"],
         num_train_epochs=epoch,
         learning_rate=learning_rate,
     )

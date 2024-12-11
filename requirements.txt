@@ -1,5 +1,7 @@
 pre-commit
-torch==2.4.0
 numpy==1.26.4
-unsloth[cu121-ampere-torch240] @ git+https://github.com/unslothai/unsloth.git@9ca13b836f647e67d6e9ca8bb712403ffaadd607
+unsloth[cu124-ampere-torch250] @ git+https://github.com/unslothai/unsloth.git@df808d074d307d396b8c04640ef51375d68f2ef0
+unsloth-zoo
 openpyxl==3.1.5
+jieba
+gensim

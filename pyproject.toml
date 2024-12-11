@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "numpy==1.26.4",
-    "unsloth[cu124-ampere-torch250] @ git+https://github.com/unslothai/unsloth.git",
+    "unsloth[cu124-ampere-torch250] @ git+https://github.com/unslothai/unsloth.git@df808d074d307d396b8c04640ef51375d68f2ef0",
     "unsloth-zoo",
     "openpyxl==3.1.5",
     "jieba",

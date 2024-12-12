@@ -3,22 +3,26 @@
 # coding: utf-8
 
 from pathlib import Path
-from typing import Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+)
 from unittest.mock import patch
 
 import unsloth.tokenizer_utils
 
 from unsloth_train._patch import fix_chat_template
+from unsloth_train.utils import _get_function_used_params
 
 
 @patch.object(unsloth.tokenizer_utils, "fix_chat_template", fix_chat_template)
 def train_model(
-    save_path: Union[str, Path],
-    save_model_name: str,
+    output_model_path: str,
     model_name: str,
     dataset_path: str,
-    save_model_format: str,
-    quantization_method: str,
+    make_dataset_fn: Callable,
+    make_dataset_parameters: Dict[str, Any] = {},
     seed: int = 3407,
     max_seq_length: int = 2048,
     load_in_4bit: bool = True,  # Use 4bit quantization to reduce memory usage. Can be False.
@@ -29,13 +33,13 @@ def train_model(
     finetune_attention_modules: bool = True,
     finetune_mlp_modules: bool = True,
     target_modules: str = None,
+    checkpoint_path: str = "outputs",
 ):
     import torch
-    from _patch import UnslothVisionDataCollator
+    from _patch import UnslothVisionModelTextDataCollator
     from trl import SFTConfig, SFTTrainer
     from unsloth import FastVisionModel, is_bf16_supported
-
-    from unsloth_train.make_dataset import make_from_qa_format_4
+    from unsloth_zoo.vision_utils import UnslothVisionDataCollator
 
     torch.backends.cuda.enable_cudnn_sdp(False)  # Fix newest nvidia gpu, like A6000
 
@@ -82,51 +86,87 @@ def train_model(
 
         return {"messages": messages}
 
-    dataset = make_from_qa_format_4(
+    make_dataset_parameters = _get_function_used_params(
+        make_dataset_fn,
+        seed=seed,
+        **make_dataset_parameters,
+    )
+
+    dataset = make_dataset_fn(
         dataset_path=dataset_path,
-        max_document_length=5,
-        not_answering_proportion=0.0,
-        bm25=True,
+        **make_dataset_parameters,
     )
     converted_dataset = [convert_to_conversation(sample) for sample in dataset]
 
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        data_collator=UnslothVisionDataCollator(model, tokenizer),  # Must use!
-        train_dataset=converted_dataset,
-        args=SFTConfig(
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=4,
-            warmup_steps=5,
-            num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
-            learning_rate=learning_rate,
-            fp16=not is_bf16_supported(),
-            bf16=is_bf16_supported(),
-            logging_steps=1,
-            optim="adamw_8bit",
-            weight_decay=0.01,
-            lr_scheduler_type="linear",
-            seed=seed,
-            output_dir="outputs",
-            report_to="none",  # For Weights and Biases
-            # You MUST put the below items for vision finetuning:
-            remove_unused_columns=False,
-            dataset_text_field="",
-            dataset_kwargs={"skip_prepare_dataset": True},
-            dataset_num_proc=2,
-            max_seq_length=max_seq_length,
-        ),
-    )
+    try:
+        trainer = SFTTrainer(
+            model=model,
+            tokenizer=tokenizer,
+            data_collator=UnslothVisionDataCollator(model, tokenizer),  # Must use!
+            train_dataset=converted_dataset,
+            args=SFTConfig(
+                per_device_train_batch_size=1,
+                gradient_accumulation_steps=4,
+                warmup_steps=5,
+                num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
+                learning_rate=learning_rate,
+                fp16=not is_bf16_supported(),
+                bf16=is_bf16_supported(),
+                logging_steps=1,
+                optim="adamw_8bit",
+                weight_decay=0.01,
+                lr_scheduler_type="linear",
+                seed=seed,
+                output_dir=checkpoint_path,
+                report_to="none",  # For Weights and Biases
+                # You MUST put the below items for vision finetuning:
+                remove_unused_columns=False,
+                dataset_text_field="",
+                dataset_kwargs={"skip_prepare_dataset": True},
+                dataset_num_proc=2,
+                max_seq_length=max_seq_length,
+            ),
+        )
+        trainer_stats = trainer.train()
+    except ValueError:  # Fix data must be have a image, will backward to only text tokenizer
+        print("Backward to 'TextTokenizer'")
+        trainer = SFTTrainer(
+            model=model,
+            tokenizer=tokenizer,
+            data_collator=UnslothVisionModelTextDataCollator(model, tokenizer),  # Must use!
+            train_dataset=converted_dataset,
+            args=SFTConfig(
+                per_device_train_batch_size=1,
+                gradient_accumulation_steps=4,
+                warmup_steps=5,
+                num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
+                learning_rate=learning_rate,
+                fp16=not is_bf16_supported(),
+                bf16=is_bf16_supported(),
+                logging_steps=1,
+                optim="adamw_8bit",
+                weight_decay=0.01,
+                lr_scheduler_type="linear",
+                seed=seed,
+                output_dir=checkpoint_path,
+                report_to="none",  # For Weights and Biases
+                # You MUST put the below items for vision finetuning:
+                remove_unused_columns=False,
+                dataset_text_field="",
+                dataset_kwargs={"skip_prepare_dataset": True},
+                dataset_num_proc=2,
+                max_seq_length=max_seq_length,
+            ),
+        )
 
-    trainer_stats = trainer.train()
+        trainer_stats = trainer.train()
 
-    save_model_path = Path(save_path, save_model_name)
-    save_model_path.mkdir(parents=True, exist_ok=True)
+    output_model_path = Path(output_model_path)
+    output_model_path.mkdir(parents=True, exist_ok=True)
     # Save - Transformers on local
-    model.save_pretrained(f"{str(save_model_path)}/lora_model")
-    tokenizer.save_pretrained(f"{str(save_model_path)}/lora_model")
-    model.save_pretrained_merged(f"{str(save_model_path)}/transformers", tokenizer)
+    model.save_pretrained(f"{str(output_model_path)}/lora_model")
+    tokenizer.save_pretrained(f"{str(output_model_path)}/lora_model")
+    model.save_pretrained_merged(f"{str(output_model_path)}/transformers", tokenizer)
 
 
 if __name__ == "__main__":
@@ -137,10 +177,7 @@ if __name__ == "__main__":
         model_name="unsloth/Llama-3.2-11B-Vision-Instruct-bnb-4bit",
         dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
         max_seq_length=max_seq_length,
-        save_path="/mnt/d/models",
-        save_model_name=f"Llama3.2-11B-Vision-Instruct-context_length_{max_seq_length}",
-        save_model_format="gguf",
-        quantization_method=["q4_k_m"],
+        output_model_path=f"/mnt/d/models/Llama3.2-11B-Vision-Instruct-context_length_{max_seq_length}",
         num_train_epochs=epoch,
         learning_rate=learning_rate,
     )

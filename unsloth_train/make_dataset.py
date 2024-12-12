@@ -1,18 +1,15 @@
 # coding: utf-8
 
+import ast
 import hashlib
 import random
+import re
 from os import PathLike
 from pathlib import Path
 from typing import (
-    Any,
-    Callable,
-    Dict,
     List,
-    Optional,
     Sequence,
     Tuple,
-    Union,
 )
 
 import datasets
@@ -27,7 +24,7 @@ def load_dataset(
     dataset_path: PathLike,
 ) -> pd.DataFrame:
     dataset_path = Path(dataset_path)
-    suffix = dataset_path.suffix.replace(".", "", 1)
+    suffix = dataset_path.suffix[1:]
     if suffix == "xlsx":
         dataset = pd.read_excel(str(dataset_path))
     else:
@@ -390,3 +387,44 @@ def make_from_qa_format_4(
 
     dataset = dataset.shuffle(seed=seed)
     return dataset.map(_to_role_content_format, batched=True, desc="Make dataset from qa")
+
+
+def make_from_universal(
+    dataset_path: PathLike,
+    seed: int = 3407,
+    dataset_text_field: str = "messages",
+):
+    origin_dataset = load_dataset(dataset_path)
+    assert dataset_text_field in origin_dataset.columns, f"'{dataset_text_field}' key must in dataset"
+    dataset = Dataset.from_pandas(df=pd.DataFrame(origin_dataset))
+
+    # Convert to [{"role": str, "content": str}, {...}, ...]
+    def _to_role_content_format(examples):
+        # Get entries
+        messages = examples.get(dataset_text_field)
+
+        all_conversations = list()
+        for i in range(len(messages)):
+            try:
+                message = ast.literal_eval(messages[i]) if isinstance(messages[i], str) else messages[i]
+            except SyntaxError:  # Fix pandas save will use '\n' to replace ',' error
+                message = re.sub(
+                    "\}\n ?\{",
+                    "}, {",
+                    messages[i],
+                )
+                message = ast.literal_eval(message)
+
+            if isinstance(message, list):
+                pass
+            elif isinstance(message, str):
+                message = [{"role": "assistant", "content": message}]
+            elif isinstance(message, dict):
+                message = [message]
+            else:
+                raise ValueError(f"'{message}' not python ast")
+            all_conversations.append(message)
+        return {"conversations": all_conversations}
+
+    dataset = dataset.shuffle(seed=seed)
+    return dataset.map(_to_role_content_format, batched=True, desc="Make dataset from universal")

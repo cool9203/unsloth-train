@@ -1,22 +1,23 @@
 # coding: utf-8
 
 from pathlib import Path
-from typing import Union
+from typing import Any, Callable, Dict, List
 from unittest.mock import patch
 
 import unsloth.tokenizer_utils
 
 from unsloth_train._patch import fix_chat_template
+from unsloth_train.utils import _get_function_used_params
 
 
 @patch.object(unsloth.tokenizer_utils, "fix_chat_template", fix_chat_template)
 def train_model(
-    save_path: Union[str, Path],
-    save_model_name: str,
+    output_model_path: str,
     model_name: str,
     dataset_path: str,
-    save_model_format: str,
-    quantization_method: str,
+    make_dataset_fn: Callable,
+    make_dataset_parameters: Dict[str, Any] = {},
+    quantization_method: str = ["q4_k_m"],
     seed: int = 3407,
     max_seq_length: int = 2048,
     chat_template_name: str = None,
@@ -26,14 +27,22 @@ def train_model(
     response_part: str = None,
     num_train_epochs: int = 1,
     learning_rate: float = 2e-4,
+    target_modules: List[str] = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
+    checkpoint_path: str = "outputs",
 ):
     import torch
     from transformers import DataCollatorForSeq2Seq, TrainingArguments
     from trl import SFTTrainer
     from unsloth import FastLanguageModel, is_bfloat16_supported
     from unsloth.chat_templates import get_chat_template, train_on_responses_only
-
-    from unsloth_train.make_dataset import make_from_qa, make_from_qa_format_3, make_from_qa_format_4
 
     # torch.backends.cuda.enable_cudnn_sdp(False)  # Fix newest nvidia gpu, like A6000
 
@@ -49,15 +58,7 @@ def train_model(
     model = FastLanguageModel.get_peft_model(
         model,
         r=16,  # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
+        target_modules=target_modules,
         lora_alpha=16,
         lora_dropout=0,  # Supports any, but = 0 is optimized
         bias="none",  # Supports any, but = "none" is optimized
@@ -88,11 +89,15 @@ def train_model(
             "text": texts,
         }
 
-    dataset = make_from_qa_format_4(
+    make_dataset_parameters = _get_function_used_params(
+        make_dataset_fn,
+        seed=seed,
+        **make_dataset_parameters,
+    )
+
+    dataset = make_dataset_fn(
         dataset_path=dataset_path,
-        max_document_length=5,
-        not_answering_proportion=1.0,
-        bm25=True,
+        **make_dataset_parameters,
     )
     dataset = dataset.map(
         formatting_prompts_func,
@@ -122,7 +127,7 @@ def train_model(
             weight_decay=0.01,
             lr_scheduler_type="linear",
             seed=seed,
-            output_dir="outputs",
+            output_dir=checkpoint_path,
         ),
     )
 
@@ -143,12 +148,12 @@ def train_model(
 
     trainer_stats = trainer.train()
 
-    save_model_path = Path(save_path, save_model_name)
-    save_model_path.mkdir(parents=True, exist_ok=True)
+    output_model_path = Path(output_model_path)
+    output_model_path.mkdir(parents=True, exist_ok=True)
 
     try:
         model.save_pretrained_gguf(
-            f"{str(save_model_path)}",
+            f"{str(output_model_path)}",
             tokenizer,
             quantization_method=quantization_method,
             maximum_memory_usage=0.75,
@@ -156,21 +161,20 @@ def train_model(
     except Exception:
         pass
     # Save - Transformers on local
-    model.save_pretrained(f"{str(save_model_path)}/lora_model")
-    tokenizer.save_pretrained(f"{str(save_model_path)}/lora_model")
+    model.save_pretrained(f"{str(output_model_path)}/lora_model")
+    tokenizer.save_pretrained(f"{str(output_model_path)}/lora_model")
 
 
 if __name__ == "__main__":
     learning_rate = 7e-6
     epoch = 5
-    max_seq_length = 4096
+    max_seq_length = 2048
     train_model(
         model_name="shenzhi-wang/Llama3.1-8B-Chinese-Chat",
         dataset_path="/mnt/d/dataset/finance/金科QA整理-20240926.xlsx",
         max_seq_length=max_seq_length,
         save_path="/mnt/d/models",
         save_model_name=f"Llama3.1-8B-Chinese-Chat-finance-qa-v3-context_length_{max_seq_length}",
-        save_model_format="gguf",
         quantization_method=["q4_k_m"],
         num_train_epochs=epoch,
         learning_rate=learning_rate,

@@ -98,7 +98,7 @@ def fix_chat_template(tokenizer):
     return chat_template
 
 
-class UnslothVisionDataCollator:
+class UnslothVisionModelTextDataCollator:
     __slots__ = "padding_token_ids", "dtype", "ignore_index", "processor"
 
     def __init__(self, model, processor, ignore_index=-100):

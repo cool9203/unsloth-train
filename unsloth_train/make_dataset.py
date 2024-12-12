@@ -409,7 +409,7 @@ def make_from_universal(
                 message = ast.literal_eval(messages[i]) if isinstance(messages[i], str) else messages[i]
             except SyntaxError:  # Fix pandas save will use '\n' to replace ',' error
                 message = re.sub(
-                    "\}\n ?\{",
+                    r"\}\n ?\{",
                     "}, {",
                     messages[i],
                 )

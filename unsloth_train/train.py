@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import os
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 from unittest.mock import patch
@@ -8,6 +9,8 @@ import unsloth.tokenizer_utils
 
 from unsloth_train._patch import fix_chat_template
 from unsloth_train.utils import _get_function_used_params
+
+os.environ["UNSLOTH_RETURN_LOGITS"] = "1"  # Reference: https://github.com/unslothai/unsloth/issues/1417#issuecomment-2538266052
 
 
 @patch.object(unsloth.tokenizer_utils, "fix_chat_template", fix_chat_template)

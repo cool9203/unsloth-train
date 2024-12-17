@@ -94,7 +94,7 @@ cd unsloth-train
 # python -m venv ./.venv
 # . ./.venv/bin/activate
 
-python -m pip install --upgrade pip setuptools editables
+python -m pip install --upgrade pip setuptools editables wheel
 pip install torch # Need choice your cuda version
 pip install -r requirements.txt
 ```

@@ -10,14 +10,30 @@ from typing import (
     List,
     Sequence,
     Tuple,
+    Union,
 )
 
 import datasets
 import pandas as pd
 import tqdm
 from datasets import Dataset
+from PIL import Image as PILImage
 
+_support_image_format = {ex for ex, f in PILImage.registered_extensions().items() if f in PILImage.OPEN}
 _bm25_model_cache = dict()
+
+
+def check_and_read_image(
+    image_path: PathLike,
+    image_root_path: PathLike = "",
+) -> Union[PILImage.Image, None]:
+    image_path = Path(image_root_path, image_path) if image_root_path and Path(image_root_path).exists() else Path(image_path)
+    if image_path.suffix in _support_image_format:  # Is image
+        if image_path.exists():
+            return PILImage.open(image_path)
+        else:
+            FileNotFoundError(f"You seem pass an image, but not exist. path: '{str(image_path)}'")
+    return None
 
 
 def load_dataset(
@@ -393,6 +409,7 @@ def make_from_universal(
     dataset_path: PathLike,
     seed: int = 3407,
     dataset_text_field: str = "messages",
+    image_root_path: str = "",
 ):
     origin_dataset = load_dataset(dataset_path)
     assert dataset_text_field in origin_dataset.columns, f"'{dataset_text_field}' key must in dataset"
@@ -401,29 +418,53 @@ def make_from_universal(
     # Convert to [{"role": str, "content": str}, {...}, ...]
     def _to_role_content_format(examples):
         # Get entries
-        messages = examples.get(dataset_text_field)
+        messages_str = examples.get(dataset_text_field)
 
         all_conversations = list()
-        for i in range(len(messages)):
+        for i in range(len(messages_str)):
             try:
-                message = ast.literal_eval(messages[i]) if isinstance(messages[i], str) else messages[i]
-            except SyntaxError:  # Fix pandas save will use '\n' to replace ',' error
-                message = re.sub(
-                    r"\}\n ?\{",
-                    "}, {",
-                    messages[i],
-                )
-                message = ast.literal_eval(message)
+                messages = ast.literal_eval(messages_str[i]) if isinstance(messages_str[i], str) else messages_str[i]
+            except SyntaxError as e:
+                # Fix pandas save will use [{}\n {}] to replace [{}, {}] error
+                _pandas_list_dict_pattern = r"\}\n *\{"
+                _fix_pandas_list_dict_pattern = r"}, {"
+                if re.findall(_pandas_list_dict_pattern, messages_str[i]):
+                    messages = re.sub(
+                        _pandas_list_dict_pattern,
+                        _fix_pandas_list_dict_pattern,
+                        messages_str[i],
+                    )
+                    messages = ast.literal_eval(messages)
+                else:
+                    raise e from e
 
-            if isinstance(message, list):
+            if isinstance(messages, list):
                 pass
-            elif isinstance(message, str):
-                message = [{"role": "assistant", "content": message}]
-            elif isinstance(message, dict):
-                message = [message]
+            elif isinstance(messages, str):
+                messages = [{"role": "assistant", "content": messages}]
+            elif isinstance(messages, dict):
+                messages = [messages]
             else:
-                raise ValueError(f"'{message}' not python ast")
-            all_conversations.append(message)
+                raise ValueError(f"'{messages}' not python ast")
+
+            # Convert image type
+            for message_index in messages:
+                contents = messages[message_index]["contents"]
+                if isinstance(contents, str):
+                    image = check_and_read_image(image_path=contents, image_root_path=image_root_path)
+                    messages[message_index]["contents"] = image if image else contents
+                elif isinstance(contents, list):
+                    for content_index in range(len(contents)):
+                        if "type" in contents[content_index] and contents[content_index]["type"] in ["image"]:
+                            image = check_and_read_image(image_path=contents[content_index], image_root_path=image_root_path)
+                            _type_name = contents[content_index]["type"]
+                            messages[message_index]["contents"][content_index][_type_name] = (
+                                image if image else messages[message_index]["contents"][content_index]
+                            )
+                else:
+                    raise ValueError(f"Not implement format: '{messages}'")
+
+            all_conversations.append(messages)
         return {"conversations": all_conversations}
 
     dataset = dataset.shuffle(seed=seed)

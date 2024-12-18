@@ -42,7 +42,7 @@ def train_model(
     from unsloth import FastVisionModel, is_bf16_supported
     from unsloth_zoo.vision_utils import UnslothVisionDataCollator
 
-    torch.backends.cuda.enable_cudnn_sdp(False)  # Fix newest nvidia gpu, like A6000
+    # torch.backends.cuda.enable_cudnn_sdp(False)  # Fix newest nvidia gpu, like A6000
 
     model, tokenizer = FastVisionModel.from_pretrained(
         model_name,

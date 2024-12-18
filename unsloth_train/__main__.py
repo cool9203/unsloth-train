@@ -74,7 +74,6 @@ def arg_parser() -> argparse.Namespace:
     )
 
     # LLM only
-
     parser.add_argument(
         "--quantization_method",
         type=str,
@@ -119,6 +118,12 @@ def arg_parser() -> argparse.Namespace:
         default="messages",
         help="\033[33;1;4m(Dataset parameter)\033[0m Make dataset text field name",
     )
+    parser.add_argument(
+        "--image_root_path",
+        type=str,
+        default="",
+        help="\033[33;1;4m(Dataset parameter)\033[0m Dataset image path common root path",
+    )
 
     args = parser.parse_args()
 
@@ -131,6 +136,7 @@ if __name__ == "__main__":
         "not_answering_proportion",
         "bm25",
         "dataset_text_field",
+        "image_root_path",
     }
     args = arg_parser()
 

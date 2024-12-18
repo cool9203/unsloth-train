@@ -48,6 +48,7 @@ def train_model(
         model_name,
         load_in_4bit=load_in_4bit,  # Use 4bit to reduce memory use. False for 16bit LoRA.
         use_gradient_checkpointing="unsloth",  # True or "unsloth" for long context
+        device_map="cuda",
     )
 
     model = FastVisionModel.get_peft_model(

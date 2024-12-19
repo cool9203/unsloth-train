@@ -48,7 +48,7 @@ def train_model(
         model_name,
         load_in_4bit=load_in_4bit,  # Use 4bit to reduce memory use. False for 16bit LoRA.
         use_gradient_checkpointing="unsloth",  # True or "unsloth" for long context
-        device_map="cuda",
+        device_map="cuda:0",
     )
 
     model = FastVisionModel.get_peft_model(
@@ -67,98 +67,58 @@ def train_model(
         target_modules=target_modules,  # Optional now! Can specify a list if needed
     )
 
-    def convert_to_conversation(sample):
-        messages = []
-        added_image = False
-        for message in sample["conversations"]:
-            if message["role"] in ["assistant"]:
-                messages.append({"role": message["role"], "content": [{"type": "text", "text": message["content"]}]})
-            elif message["role"] in ["user"] and not added_image:
-                added_image = True
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": message["content"]},
-                        ],
-                    }
-                )
-            elif message["role"] in ["user", "system"]:
-                messages.append({"role": "user", "content": [{"type": "text", "text": message["content"]}]})
-
-        return {"messages": messages}
-
     make_dataset_parameters = _get_function_used_params(
         make_dataset_fn,
         seed=seed,
         **make_dataset_parameters,
     )
 
-    dataset = make_dataset_fn(
+    converted_dataset = make_dataset_fn(
         dataset_path=dataset_path,
         **make_dataset_parameters,
     )
-    converted_dataset = [convert_to_conversation(sample) for sample in dataset]
+
+    trainer_params = {
+        "model": model,
+        "tokenizer": tokenizer,
+        "args": SFTConfig(
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=4,
+            warmup_steps=5,
+            num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
+            learning_rate=learning_rate,
+            fp16=not is_bf16_supported(),
+            bf16=is_bf16_supported(),
+            logging_steps=1,
+            optim="adamw_8bit",
+            weight_decay=0.01,
+            lr_scheduler_type="linear",
+            seed=seed,
+            output_dir=checkpoint_path,
+            report_to="none",  # For Weights and Biases
+            # You MUST put the below items for vision finetuning:
+            remove_unused_columns=False,
+            dataset_text_field="",
+            dataset_kwargs={"skip_prepare_dataset": True},
+            dataset_num_proc=2,
+            max_seq_length=max_seq_length,
+        ),
+    }
 
     try:
         trainer = SFTTrainer(
-            model=model,
-            tokenizer=tokenizer,
             data_collator=UnslothVisionDataCollator(model, tokenizer),  # Must use!
             train_dataset=converted_dataset,
-            args=SFTConfig(
-                per_device_train_batch_size=1,
-                gradient_accumulation_steps=4,
-                warmup_steps=5,
-                num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
-                learning_rate=learning_rate,
-                fp16=not is_bf16_supported(),
-                bf16=is_bf16_supported(),
-                logging_steps=1,
-                optim="adamw_8bit",
-                weight_decay=0.01,
-                lr_scheduler_type="linear",
-                seed=seed,
-                output_dir=checkpoint_path,
-                report_to="none",  # For Weights and Biases
-                # You MUST put the below items for vision finetuning:
-                remove_unused_columns=False,
-                dataset_text_field="",
-                dataset_kwargs={"skip_prepare_dataset": True},
-                dataset_num_proc=2,
-                max_seq_length=max_seq_length,
-            ),
+            **trainer_params,
         )
         trainer_stats = trainer.train()
-    except ValueError:  # Fix data must be have a image, will backward to only text tokenizer
+    except ValueError as e:  # Fix data must be have a image, will backward to only text tokenizer
+        print(e)
         print("Backward to 'TextTokenizer'")
         trainer = SFTTrainer(
-            model=model,
-            tokenizer=tokenizer,
             data_collator=UnslothVisionModelTextDataCollator(model, tokenizer),  # Must use!
             train_dataset=converted_dataset,
-            args=SFTConfig(
-                per_device_train_batch_size=1,
-                gradient_accumulation_steps=4,
-                warmup_steps=5,
-                num_train_epochs=num_train_epochs,  # Set this for 1 full training run.
-                learning_rate=learning_rate,
-                fp16=not is_bf16_supported(),
-                bf16=is_bf16_supported(),
-                logging_steps=1,
-                optim="adamw_8bit",
-                weight_decay=0.01,
-                lr_scheduler_type="linear",
-                seed=seed,
-                output_dir=checkpoint_path,
-                report_to="none",  # For Weights and Biases
-                # You MUST put the below items for vision finetuning:
-                remove_unused_columns=False,
-                dataset_text_field="",
-                dataset_kwargs={"skip_prepare_dataset": True},
-                dataset_num_proc=2,
-                max_seq_length=max_seq_length,
-            ),
+            **trainer_params,
         )
 
         trainer_stats = trainer.train()

@@ -416,56 +416,58 @@ def make_from_universal(
     dataset = Dataset.from_pandas(df=pd.DataFrame(origin_dataset))
 
     # Convert to [{"role": str, "content": str}, {...}, ...]
-    def _to_role_content_format(examples):
+    def _to_role_content_format(sample):
         # Get entries
-        messages_str = examples.get(dataset_text_field)
-
+        messages_str = sample.get("messages")
         all_conversations = list()
-        for i in range(len(messages_str)):
-            try:
-                messages = ast.literal_eval(messages_str[i]) if isinstance(messages_str[i], str) else messages_str[i]
-            except SyntaxError as e:
-                # Fix pandas save will use [{}\n {}] to replace [{}, {}] error
-                _pandas_list_dict_pattern = r"\}\n *\{"
-                _fix_pandas_list_dict_pattern = r"}, {"
-                if re.findall(_pandas_list_dict_pattern, messages_str[i]):
-                    messages = re.sub(
-                        _pandas_list_dict_pattern,
-                        _fix_pandas_list_dict_pattern,
-                        messages_str[i],
-                    )
-                    messages = ast.literal_eval(messages)
-                else:
-                    raise e from e
-
-            if isinstance(messages, list):
-                pass
-            elif isinstance(messages, str):
-                messages = [{"role": "assistant", "content": messages}]
-            elif isinstance(messages, dict):
-                messages = [messages]
+        try:
+            messages = ast.literal_eval(messages_str) if isinstance(messages_str, str) else messages_str
+        except SyntaxError as e:
+            # Fix pandas save will use [{}\n {}] to replace [{}, {}] error
+            _pandas_list_dict_pattern = r"\}\n *\{"
+            _fix_pandas_list_dict_pattern = r"}, {"
+            if re.findall(_pandas_list_dict_pattern, messages_str):
+                messages = re.sub(
+                    _pandas_list_dict_pattern,
+                    _fix_pandas_list_dict_pattern,
+                    messages_str,
+                )
+                messages = ast.literal_eval(messages)
             else:
-                raise ValueError(f"'{messages}' not python ast")
+                raise e from e
 
-            # Convert image type
-            for message_index in messages:
-                contents = messages[message_index]["contents"]
-                if isinstance(contents, str):
-                    image = check_and_read_image(image_path=contents, image_root_path=image_root_path)
-                    messages[message_index]["contents"] = image if image else contents
-                elif isinstance(contents, list):
-                    for content_index in range(len(contents)):
-                        if "type" in contents[content_index] and contents[content_index]["type"] in ["image"]:
-                            image = check_and_read_image(image_path=contents[content_index], image_root_path=image_root_path)
-                            _type_name = contents[content_index]["type"]
-                            messages[message_index]["contents"][content_index][_type_name] = (
-                                image if image else messages[message_index]["contents"][content_index]
-                            )
-                else:
-                    raise ValueError(f"Not implement format: '{messages}'")
+        if isinstance(messages, list):
+            pass
+        elif isinstance(messages, str):
+            messages = [{"role": "assistant", "content": messages}]
+        elif isinstance(messages, dict):
+            messages = [messages]
+        else:
+            raise ValueError(f"'{messages}' not python ast")
 
-            all_conversations.append(messages)
-        return {"conversations": all_conversations}
+        # Convert image type
+        for message_index in range(len(messages)):
+            contents = messages[message_index]["content"]
+            messages[message_index]["role"] = (
+                "user" if messages[message_index]["role"] in ["system", "user"] else messages[message_index]["role"]
+            )
+            if isinstance(contents, str):
+                image = check_and_read_image(image_path=contents, image_root_path=image_root_path)
+                messages[message_index]["content"] = image if image else contents
+            elif isinstance(contents, list):
+                for content_index, content in enumerate(contents):
+                    if "type" in content and content["type"] in ["image"]:
+                        _type_name = content["type"]
+                        image = check_and_read_image(
+                            image_path=content[_type_name],
+                            image_root_path=image_root_path,
+                        )
+                        messages[message_index]["content"][content_index][_type_name] = image if image else content[_type_name]
+            else:
+                raise ValueError(f"Not implement format: '{messages}'")
+
+        all_conversations.append(messages)
+        return {"messages": all_conversations}
 
     dataset = dataset.shuffle(seed=seed)
-    return dataset.map(_to_role_content_format, batched=True, desc="Make dataset from universal")
+    return [_to_role_content_format(sample) for sample in dataset]

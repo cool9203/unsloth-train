@@ -53,7 +53,7 @@ def arg_parser() -> argparse.Namespace:
 
 def check_iterate_num(
     path: PathLike,
-    check_name: str = "orig",
+    check_name: str,
 ) -> int:
     iterate_num = 0
     is_exist = False
@@ -71,28 +71,30 @@ def check_iterate_num(
 def _read_label_data_and_copy_image(
     iterate_num: int,
     path_chain: list[PathLike],
+    folder_name: str,
 ) -> List[Dict[str, Any]]:
     root_path = "/".join([str(p) for p in path_chain])
     data = list()
 
     if len(path_chain) == iterate_num:
         read_filenames = set()
-        for path in Path(root_path, "orig").glob(r"*.txt"):
+        for path in Path(root_path, folder_name).glob(r"*.txt"):
             if path.stem not in read_filenames:
                 base_name = path.stem
+                extension_name = None
                 logger.info(f"Read {base_name!s}")
                 read_filenames.add(base_name)
 
                 # Read image and check label file
-                if Path(root_path, "orig", f"{base_name}.txt").exists():
-                    if Path(root_path, "orig", f"{base_name}.jpg").exists():
-                        image = Image.open(Path(root_path, "orig", f"{base_name}.jpg"))
-                    elif Path(root_path, "orig", f"{base_name}.png").exists():
-                        image = Image.open(Path(root_path, "orig", f"{base_name}.png"))
+                if Path(root_path, folder_name, f"{base_name}.txt").exists():
+                    if Path(root_path, folder_name, f"{base_name}.jpg").exists():
+                        extension_name = ".jpg"
+                    elif Path(root_path, folder_name, f"{base_name}.png").exists():
+                        extension_name = ".png"
                     else:
                         raise FileNotFoundError("Not found image file")
 
-                    with Path(root_path, "orig", f"{base_name}.txt").open("r", encoding="utf-8") as f:
+                    with Path(root_path, folder_name, f"{base_name}.txt").open("r", encoding="utf-8") as f:
                         label_content = f.read()
                 else:
                     raise FileNotFoundError("Not found label file")
@@ -101,8 +103,8 @@ def _read_label_data_and_copy_image(
                     {
                         "label": label_content,
                         "source": base_name,
-                        "full_source": str(Path(root_path, "orig", base_name)),
-                        "image": image,
+                        "full_source": str(Path(root_path, folder_name, base_name)),
+                        "image_path": str(Path(root_path, folder_name, f"{base_name}{extension_name}")),
                     }
                 )
 
@@ -145,6 +147,7 @@ def convert_dataset_from_tmpco(
     data = _read_label_data_and_copy_image(
         iterate_num=iterate_num + 1,
         path_chain=[root_path],
+        folder_name=folder_name,
     )
 
     logger.info(pprint.pformat(data[:3]))
@@ -158,7 +161,7 @@ def convert_dataset_from_tmpco(
 
     # Convert to dataset format
     dataset = list()
-    logger.info("Convert to dataset format")
+    logger.info("Convert to dataset format start")
     for i in range(len(df)):
         dataset.append(
             {
@@ -190,7 +193,9 @@ def convert_dataset_from_tmpco(
                 "full_source": df.iloc[i]["full_source"],
             }
         )
-        df.iloc[i]["image"].save(str(Path(image_save_path, f'{df.iloc[i]["source"]}.jpg')))
+        with Image.open(df.iloc[i]["image_path"]) as image_file:
+            image_file.save(str(Path(image_save_path, f'{df.iloc[i]["source"]}.jpg')))
+    logger.info("Convert to dataset format end")
 
     dataset_save_path = Path(output_path, "data.xlsx")
     dataset = pd.DataFrame(dataset)

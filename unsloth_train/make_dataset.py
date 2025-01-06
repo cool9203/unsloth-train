@@ -419,7 +419,6 @@ def make_from_universal(
     def _to_role_content_format(sample):
         # Get entries
         messages_str = sample.get("messages")
-        all_conversations = list()
         try:
             messages = ast.literal_eval(messages_str) if isinstance(messages_str, str) else messages_str
         except SyntaxError as e:
@@ -466,8 +465,7 @@ def make_from_universal(
             else:
                 raise ValueError(f"Not implement format: '{messages}'")
 
-        all_conversations.append(messages)
-        return {"messages": all_conversations}
+        return {"messages": messages}
 
     dataset = dataset.shuffle(seed=seed)
     return [_to_role_content_format(sample) for sample in dataset]

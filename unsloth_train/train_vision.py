@@ -1,6 +1,7 @@
 # coding: utf-8
 
 import os
+import traceback
 from pathlib import Path
 from typing import (
     Any,
@@ -113,7 +114,7 @@ def train_model(
         )
         trainer_stats = trainer.train()
     except ValueError as e:  # Fix data must be have a image, will backward to only text tokenizer
-        print(e)
+        traceback.print_exception(e)
         print("Backward to 'TextTokenizer'")
         trainer = SFTTrainer(
             data_collator=UnslothVisionModelTextDataCollator(model, tokenizer),  # Must use!

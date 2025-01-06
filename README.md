@@ -127,3 +127,9 @@ python unsloth_train vision \
 ### OSError: [Errno 24] Too many open files
 
 Reference: https://stackoverflow.com/a/39537952
+
+### Killed (when run train script get this error)
+
+Not enough memory. need increase memory or swap space.
+
+Increase swap space can reference: https://askubuntu.com/questions/178712/how-to-increase-swap-space/534090#534090

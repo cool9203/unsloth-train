@@ -122,6 +122,16 @@ python unsloth_train vision \
     --num_train_epochs 3
 ```
 
+## Prepare train data
+
+Accept pandas can read file.
+
+Data format:
+
+| index | messages                                                                                                                                                                                                                                                                                                                                           |
+| :---: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|   0   | [{'role': 'system', 'content': [{'type': 'text', 'text': 'You should follow the instructions carefully and explain your answers in detail.'}]}, {'role': 'user', 'content': [{'type': 'image', 'image': 'image path'}, {'type': 'text', 'text': 'latex table ocr'}]}, {'role': 'assistant', 'content': [{'type': 'text', 'text': 'output text'}]}] |
+
 ## Troubleshooting
 
 ### OSError: [Errno 24] Too many open files

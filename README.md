@@ -6,7 +6,9 @@ A use unsloth to train llm model script
 
 ### Install
 
-Work In Progress...
+#### Pre-install
+
+[nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ### Train model with docker
 

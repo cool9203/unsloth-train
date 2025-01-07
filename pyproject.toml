@@ -20,6 +20,7 @@ dependencies = [
     "gensim",
 ]
     [project.optional-dependencies]
+    gradio = ["gradio==5.9.1", "pypandoc>=1.14"]
 
 
 [tool]

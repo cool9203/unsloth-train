@@ -43,6 +43,7 @@ def arg_parser() -> argparse.Namespace:
     parser.add_argument("-r", "--root_path", type=str, required=True, help="Folder data path")
     parser.add_argument("-o", "--output_path", type=str, required=True, help="Output data path")
     parser.add_argument("-f", "--folder_name", type=str, default="orig", help="Check folder name")
+    parser.add_argument("--format", type=str, default="latex", help="Output label format")
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Show detail")
 
@@ -124,6 +125,7 @@ def convert_dataset_from_tmpco(
     root_path: PathLike,
     output_path: PathLike,
     folder_name: str,
+    format: str,
 ) -> pd.DataFrame:
     # Pre-check
     root_path = Path(root_path)
@@ -179,7 +181,7 @@ def convert_dataset_from_tmpco(
                         "role": "user",
                         "content": [
                             {"type": "image", "image": str(Path("image", f'{df.iloc[i]["source"]}.jpg'))},
-                            {"type": "text", "text": "latex table ocr"},
+                            {"type": "text", "text": f"{format} table ocr"},
                         ],
                     },
                     {

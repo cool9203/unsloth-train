@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import argparse
 import re
 
 import gradio as gr
@@ -15,6 +16,27 @@ __model: dict[str, MllamaForConditionalGeneration | MllamaProcessor | str] = {
     "tokenizer": None,
     "name": None,
 }
+
+
+def arg_parser() -> argparse.Namespace:
+    """取得執行程式時傳遞的參數
+
+    tutorial: https://docs.python.org/zh-tw/3/howto/argparse.html#
+    reference: https://docs.python.org/zh-tw/3/library/argparse.html#nargs
+
+    Returns:
+        argparse.Namespace: 使用args.name取得傳遞的參數
+    """
+
+    parser = argparse.ArgumentParser(description="Run test website to test unsloth training with llm or vlm")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Web server host")
+    parser.add_argument("--port", type=int, default=7860, help="Web server port")
+    parser.add_argument("--model_name_or_path", type=str, default=None, help="Run model name or path")
+    parser.add_argument("--max_new_tokens", type=int, default=4096, help="Run model generate max new tokens")
+
+    args = parser.parse_args()
+
+    return args
 
 
 def load_model(
@@ -150,4 +172,6 @@ def test_website(
 
 
 if __name__ == "__main__":
-    test_website()
+    args = arg_parser()
+    args_dict = vars(args)
+    test_website(**args_dict)

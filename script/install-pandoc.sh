@@ -12,6 +12,6 @@ fi
 wget https://github.com/jgm/pandoc/releases/download/3.1.2/pandoc-3.1.2-linux-"${PANDOC_ARCH}".tar.gz
 tar xvf pandoc-3.1.2-linux-"${PANDOC_ARCH}".tar.gz
 cd pandoc-3.1.2
-sudo cp bin/pandoc /usr/local/bin/
+cp bin/pandoc /usr/local/bin/
 cd ..
 rm -rf pandoc-3.1.2*

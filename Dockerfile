@@ -11,17 +11,19 @@ ARG UV_VERSION=0.5.7
 WORKDIR /app
 
 RUN apt update && \
-    apt install -y git
+    apt install -y git wget
 
 COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /bin/uv
 COPY ./pyproject.toml ./README.md ./
 COPY ./unsloth_train/__init__.py ./unsloth_train/__init__.py
+COPY ./script/install-pandoc.sh ./install-pandoc.sh
 
+RUN ARCH=x86_64 bash install-pandoc.sh
 RUN uv venv -p ${PYTHON_VERSION} && \
     uv pip install -U pip setuptools hatchling editables wheel && \
     uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu${CUDA_VERSION_SHORT}
 RUN uv pip install flash-attn==v2.7.0.post2 --no-build-isolation
-RUN uv pip install -e .
+RUN uv pip install -e .[gradio]
 
 COPY ./unsloth_train ./unsloth_train
 

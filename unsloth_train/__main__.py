@@ -23,20 +23,21 @@ def arg_parser() -> argparse.Namespace:
         choices=[
             "text",
             "vision",
+            "test_web",
         ],
         help="Run training script name",
     )
 
     # Common
-    parser.add_argument("-o", "--output_model_path", type=str, required=True, help="Save model path")
+    parser.add_argument("-o", "--output_model_path", type=str, default=None, help="Save model path")
     parser.add_argument(
         "-m",
         "--model_name",
         type=str,
-        required=True,
+        default=None,
         help="Training model name, need full, like 'unsloth/Llama-3.2-11B-Vision-Instruct-bnb-4bit'",
     )
-    parser.add_argument("-d", "--dataset_path", type=str, required=True, help="Training dataset path")
+    parser.add_argument("-d", "--dataset_path", type=str, default=None, help="Training dataset path")
     parser.add_argument("--seed", type=int, default=3407, help="Random seed")
     parser.add_argument("--max_seq_length", type=int, default=2048, help="Train data max sequence length")
     parser.add_argument("--load_in_4bit", action="store_true", help="Model load in 4bit with bitsandbytes")
@@ -125,12 +126,43 @@ def arg_parser() -> argparse.Namespace:
         help="\033[33;1;4m(Dataset parameter)\033[0m Dataset image path common root path",
     )
 
+    # Test website only
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="\033[35;1;4m(Website parameter)\033[0m Web server host",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=7860,
+        help="\033[35;1;4m(Website parameter)\033[0m Web server port",
+    )
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        default=None,
+        help="\033[35;1;4m(Website parameter)\033[0m Run model name or path",
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=4096,
+        help="\033[35;1;4m(Website parameter)\033[0m Run model generate max new tokens",
+    )
+
     args = parser.parse_args()
 
     return args
 
 
 if __name__ == "__main__":
+    check_arguments = [
+        "output_model_path",
+        "model_name",
+        "dataset_path",
+    ]
     make_dataset_parameter_keys = {
         "max_document_length",
         "not_answering_proportion",
@@ -139,6 +171,11 @@ if __name__ == "__main__":
         "image_root_path",
     }
     args = arg_parser()
+
+    # Pre-process arguments
+    for check_argument in check_arguments:
+        if not getattr(args, check_argument):
+            delattr(args, check_argument)
 
     args_dict = vars(args)
 
@@ -166,8 +203,16 @@ if __name__ == "__main__":
 
     if args.script_name == "text":
         from unsloth_train.train import train_model
+
+        parameters = _get_function_used_params(train_model, **args_dict)
+        train_model(**parameters)
     elif args.script_name == "vision":
         from unsloth_train.train_vision import train_model
 
-    parameters = _get_function_used_params(train_model, **args_dict)
-    train_model(**parameters)
+        parameters = _get_function_used_params(train_model, **args_dict)
+        train_model(**parameters)
+    elif args.script_name == "test_web":
+        from unsloth_train.test_website import test_website
+
+        parameters = _get_function_used_params(test_website, **args_dict)
+        test_website(**parameters)

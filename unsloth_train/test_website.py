@@ -1,7 +1,6 @@
 # coding: utf-8
 
 import re
-import traceback
 
 import gradio as gr
 import pypandoc
@@ -9,6 +8,7 @@ from transformers import MllamaForConditionalGeneration, MllamaProcessor
 from unsloth import FastVisionModel
 
 _latex_tabular_pattern = r"(\\begin[\S\s]*\\end{tabular})"
+_markdown_table_pattern = r"(\|[\S\s]*\|)"
 
 __model: dict[str, MllamaForConditionalGeneration | MllamaProcessor | str] = {
     "model": None,
@@ -34,10 +34,9 @@ def generate(
     prompt: str,
     device_map: str = "auto",
     max_new_tokens: int = 1024,
-    use_cache: bool = True,
-    temperature: float = 0.0,
-    min_p: float = 0.1,
-):
+    **kwds,
+) -> str:
+    tokenizer = __model.get("tokenizer")
     messages = [
         {
             "role": "user",
@@ -53,27 +52,29 @@ def generate(
             ],
         },
     ]
-    input_text = __model.get("tokenizer").apply_chat_template(messages, add_generation_prompt=True)
-    inputs = __model.get("tokenizer")(
+    input_text = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
+    inputs = tokenizer(
         image,
         input_text,
-        add_special_tokens=False,
+        add_special_tokens=True,
         return_tensors="pt",
     ).to(device_map)
-    return __model.get("model").generate(
+    output = __model.get("model").generate(
         **inputs,
         max_new_tokens=max_new_tokens,
-        use_cache=use_cache,
-        temperature=temperature,
-        min_p=min_p,
-        do_sample=False,
-    )[0]
+        **kwds,
+    )
+    return tokenizer.decode(output[0], skip_special_tokens=True)
 
 
 def handle_request(
     model_name_or_path: str,
     image,
     prompt: str,
+    device_map: str = "auto",
+    max_new_tokens: int = 4096,
+    use_cache: bool = True,
+    top_p: float = 1.0,
 ):
     if model_name_or_path != __model.get("name", None):
         (__model["model"], __model["tokenizer"]) = load_model(model_name_or_path=model_name_or_path)
@@ -81,29 +82,44 @@ def handle_request(
     origin_response = generate(
         prompt=prompt,
         image=image,
-        device_map="cuda:0",
+        device_map=device_map,
+        max_new_tokens=max_new_tokens,
+        use_cache=use_cache,
+        top_p=top_p,
+        do_sample=False,
     )
     try:
         origin_response = re.findall(_latex_tabular_pattern, origin_response)[0]
         html_response = pypandoc.convert_text(origin_response, "html", format="latex")
     except Exception as e:
-        traceback.print_exception(e)
-        html_response = "輸出的內容不是正確的 latex"
+        try:
+            origin_response = re.findall(_markdown_table_pattern, origin_response)[0]
+            html_response = pypandoc.convert_text(origin_response, "html", format="markdown")
+        except Exception as e:
+            html_response = "輸出的內容不是正確的 latex or markdown"
     return origin_response, html_response
 
 
 def test_website(
     host: str = "127.0.0.1",
     port: int = 7860,
+    model_name_or_path: str = None,
+    max_new_tokens: int = 4096,
     **kwds,
 ):
+    if model_name_or_path and __model.get("name") is None:
+        (__model["model"], __model["tokenizer"]) = load_model(model_name_or_path=model_name_or_path)
+        __model["name"] = model_name_or_path
+
     # Gradio 接口定義
     with gr.Blocks() as demo:
         gr.Markdown("## LLM 測試網站（支持圖片與文本輸入）")
 
         with gr.Row():
             with gr.Column():
-                model_name_or_path = gr.Textbox(label="模型名稱或路徑", value=__model.get("name", None))
+                _model_name_or_path = gr.Textbox(
+                    label="模型名稱或路徑", value=__model.get("name", None), visible=not model_name_or_path
+                )
                 image_input = gr.Image(label="上傳圖片", type="pil")
                 prompt_input = gr.Textbox(label="輸入文字提示", lines=2, value="latex table ocr")
                 submit_button = gr.Button("生成")
@@ -112,12 +128,18 @@ def test_website(
                 html_output = gr.HTML(label="生成的表格輸出")
                 text_output = gr.Textbox(label="生成的文字輸出")
 
+        # Constant augments
+        _device_map = gr.Textbox(value="cuda:0", visible=False)
+        _max_new_tokens = gr.Number(value=max_new_tokens, visible=False)
+
         submit_button.click(
             handle_request,
             inputs=[
-                model_name_or_path,
+                _model_name_or_path,
                 image_input,
                 prompt_input,
+                _device_map,
+                _max_new_tokens,
             ],
             outputs=[text_output, html_output],
         )

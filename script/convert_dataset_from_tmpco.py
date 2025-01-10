@@ -32,6 +32,7 @@ from typing import (
 )
 
 import pandas as pd
+import tqdm as TQDM
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ def arg_parser() -> argparse.Namespace:
     parser.add_argument("-o", "--output_path", type=str, required=True, help="Output data path")
     parser.add_argument("-f", "--folder_name", type=str, default="orig", help="Check folder name")
     parser.add_argument("--format", type=str, default="latex", help="Output label format")
+    parser.add_argument("--tqdm", action="store_true", help="Show progress bar")
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Show detail")
 
@@ -126,6 +128,7 @@ def convert_dataset_from_tmpco(
     output_path: PathLike,
     folder_name: str,
     format: str,
+    tqdm: bool = False,
 ) -> pd.DataFrame:
     # Pre-check
     root_path = Path(root_path)
@@ -164,7 +167,8 @@ def convert_dataset_from_tmpco(
     # Convert to dataset format
     dataset = list()
     logger.info("Convert to dataset format start")
-    for i in range(len(df)):
+    iter_length = TQDM.tqdm(range(len(df))) if tqdm else range(len(df))
+    for i in iter_length:
         dataset.append(
             {
                 "messages": [

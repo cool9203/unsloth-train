@@ -7,6 +7,8 @@ import re
 from os import PathLike
 from pathlib import Path
 from typing import (
+    Any,
+    Dict,
     List,
     Sequence,
     Tuple,
@@ -23,14 +25,14 @@ _support_image_format = {ex for ex, f in PILImage.registered_extensions().items(
 _bm25_model_cache = dict()
 
 
-def check_and_read_image(
+def check_image_path(
     image_path: PathLike,
     image_root_path: PathLike = "",
-) -> Union[PILImage.Image, None]:
+) -> Union[str, None]:
     image_path = Path(image_root_path, image_path) if image_root_path and Path(image_root_path).exists() else Path(image_path)
     if image_path.suffix in _support_image_format:  # Is image
         if image_path.exists():
-            return PILImage.open(image_path)
+            return image_path
         else:
             FileNotFoundError(f"You seem pass an image, but not exist. path: '{str(image_path)}'")
     return None
@@ -416,9 +418,15 @@ def make_from_universal(
     dataset = Dataset.from_pandas(df=pd.DataFrame(origin_dataset))
 
     # Convert to [{"role": str, "content": str}, {...}, ...]
-    def _to_role_content_format(sample):
+    def _to_role_content_format(
+        sample: Union[Dict[str, Any], str],
+        image_root_path: str,
+    ):
         # Get entries
-        messages_str = sample.get("messages")
+        if isinstance(sample, str):
+            messages_str = sample
+        else:
+            messages_str = sample.get("messages")
         try:
             messages = ast.literal_eval(messages_str) if isinstance(messages_str, str) else messages_str
         except SyntaxError as e:
@@ -451,21 +459,26 @@ def make_from_universal(
                 "user" if messages[message_index]["role"] in ["system", "user"] else messages[message_index]["role"]
             )
             if isinstance(contents, str):
-                image = check_and_read_image(image_path=contents, image_root_path=image_root_path)
-                messages[message_index]["content"] = image if image else contents
+                image_path = check_image_path(image_path=contents, image_root_path=image_root_path)
+                messages[message_index]["content"] = image_path if image_path else contents
             elif isinstance(contents, list):
                 for content_index, content in enumerate(contents):
                     if "type" in content and content["type"] in ["image"]:
-                        _type_name = content["type"]
-                        image = check_and_read_image(
-                            image_path=content[_type_name],
+                        image_path = check_image_path(
+                            image_path=content[content["type"]],
                             image_root_path=image_root_path,
                         )
-                        messages[message_index]["content"][content_index][_type_name] = image if image else content[_type_name]
+                        if image_path:
+                            messages[message_index]["content"][content_index]["image"] = image_path
+                        else:
+                            messages[message_index]["content"][content_index] = {
+                                "type": "text",
+                                "text": content[content["type"]],
+                            }
             else:
                 raise ValueError(f"Not implement format: '{messages}'")
 
         return {"messages": messages}
 
     dataset = dataset.shuffle(seed=seed)
-    return [_to_role_content_format(sample) for sample in dataset]
+    return [_to_role_content_format(sample, image_root_path=image_root_path) for sample in dataset]

@@ -151,6 +151,12 @@ def arg_parser() -> argparse.Namespace:
         default=4096,
         help="\033[35;1;4m(Website parameter)\033[0m Run model generate max new tokens",
     )
+    parser.add_argument(
+        "--device_map",
+        type=str,
+        default="cuda:0",
+        help="\033[35;1;4m(Website parameter)\033[0m Run model device map",
+    )
 
     args = parser.parse_args()
 

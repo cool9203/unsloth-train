@@ -33,6 +33,7 @@ def arg_parser() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=7860, help="Web server port")
     parser.add_argument("--model_name_or_path", type=str, default=None, help="Run model name or path")
     parser.add_argument("--max_new_tokens", type=int, default=4096, help="Run model generate max new tokens")
+    parser.add_argument("--device_map", type=str, default="cuda:0", help="Run model device map")
 
     args = parser.parse_args()
 
@@ -42,10 +43,12 @@ def arg_parser() -> argparse.Namespace:
 def load_model(
     model_name_or_path: str,
     load_in_4bit: bool = True,
+    device_map: str = "cuda:0",
 ):
     model, tokenizer = FastVisionModel.from_pretrained(
         model_name=model_name_or_path,  # YOUR MODEL YOU USED FOR TRAINING
         load_in_4bit=load_in_4bit,  # Set to False for 16bit LoRA
+        device_map=device_map,
     )
     FastVisionModel.for_inference(model)  # Enable for inference!
     return (model, tokenizer)
@@ -99,7 +102,10 @@ def handle_request(
     top_p: float = 1.0,
 ):
     if model_name_or_path != __model.get("name", None):
-        (__model["model"], __model["tokenizer"]) = load_model(model_name_or_path=model_name_or_path)
+        (__model["model"], __model["tokenizer"]) = load_model(
+            model_name_or_path=model_name_or_path,
+            device_map=device_map,
+        )
         __model["name"] = model_name_or_path
     origin_response = generate(
         prompt=prompt,
@@ -127,10 +133,14 @@ def test_website(
     port: int = 7860,
     model_name_or_path: str = None,
     max_new_tokens: int = 4096,
+    device_map: str = "cuda:0",
     **kwds,
 ):
     if model_name_or_path and __model.get("name") is None:
-        (__model["model"], __model["tokenizer"]) = load_model(model_name_or_path=model_name_or_path)
+        (__model["model"], __model["tokenizer"]) = load_model(
+            model_name_or_path=model_name_or_path,
+            device_map=device_map,
+        )
         __model["name"] = model_name_or_path
 
     # Gradio 接口定義
@@ -151,7 +161,7 @@ def test_website(
                 text_output = gr.Textbox(label="生成的文字輸出")
 
         # Constant augments
-        _device_map = gr.Textbox(value="cuda:0", visible=False)
+        _device_map = gr.Textbox(value=device_map, visible=False)
         _max_new_tokens = gr.Number(value=max_new_tokens, visible=False)
 
         submit_button.click(

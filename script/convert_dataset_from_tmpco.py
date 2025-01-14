@@ -31,6 +31,7 @@ from typing import (
 )
 
 import pandas as pd
+import pypandoc
 import tqdm as TQDM
 from PIL import Image
 
@@ -42,8 +43,9 @@ def arg_parser() -> argparse.Namespace:
 
     parser.add_argument("-r", "--root_path", type=str, required=True, help="Folder data path")
     parser.add_argument("-o", "--output_path", type=str, required=True, help="Output data path")
-    parser.add_argument("-f", "--folder_name", type=str, default=None, help="Check folder name")
-    parser.add_argument("--format", type=str, default="latex", help="Output label format")
+    parser.add_argument("--folder_name", type=str, default=None, help="Check folder name")
+    parser.add_argument("--format", type=str, choices=["latex", "markdown", "str"], required=True, help="Output text format")
+    parser.add_argument("--prompt", type=str, required=True, help="After image prompt text")
     parser.add_argument("--output_name", type=str, default="data", help="Output filename")
     parser.add_argument("--copy_image", action="store_true", help="Output filename")
 
@@ -133,6 +135,7 @@ def convert_dataset_from_tmpco(
     output_name: str,
     folder_name: str,
     format: str,
+    prompt: str,
     copy_image: bool = False,
     tqdm: bool = False,
 ) -> pd.DataFrame:
@@ -171,6 +174,20 @@ def convert_dataset_from_tmpco(
     image_save_path = Path(output_path, "image")
     image_save_path.mkdir(parents=True, exist_ok=True)
 
+    iter_length = TQDM.tqdm(range(len(df))) if tqdm else range(len(df))
+
+    # Pre-check output text format
+    logger.info("Pre-check output text format")
+    for i in iter_length:
+        if format in ["latex", "markdown"]:
+            text = pypandoc.convert_text(df.iloc[i]["label"], to="html", format=format)
+            if "<table>" not in text:
+                raise ValueError(f"format error: incorrect {format}")
+        elif format in ["str"]:
+            pass
+        else:
+            raise ValueError("format error")
+
     # Convert to dataset format
     dataset = list()
     logger.info("Convert to dataset format start")
@@ -192,7 +209,7 @@ def convert_dataset_from_tmpco(
                         "role": "user",
                         "content": [
                             {"type": "image", "image": str(Path("image", f'{df.iloc[i]["source"]}.jpg'))},
-                            {"type": "text", "text": f"{format} table ocr"},
+                            {"type": "text", "text": prompt},
                         ],
                     },
                     {

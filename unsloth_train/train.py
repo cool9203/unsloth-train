@@ -58,19 +58,23 @@ def train_model(
         # token = "hf_...", # use one if using gated models like meta-llama/Llama-2-7b-hf
     )
 
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=16,  # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
-        target_modules=target_modules,
-        lora_alpha=16,
-        lora_dropout=0,  # Supports any, but = 0 is optimized
-        bias="none",  # Supports any, but = "none" is optimized
-        # [NEW] "unsloth" uses 30% less VRAM, fits 2x larger batch sizes!
-        use_gradient_checkpointing="unsloth",  # True or "unsloth" for very long context
-        random_state=seed,
-        use_rslora=False,  # We support rank stabilized LoRA
-        loftq_config=None,  # And LoftQ
-    )
+    try:
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=16,  # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
+            target_modules=target_modules,
+            lora_alpha=16,
+            lora_dropout=0,  # Supports any, but = 0 is optimized
+            bias="none",  # Supports any, but = "none" is optimized
+            # [NEW] "unsloth" uses 30% less VRAM, fits 2x larger batch sizes!
+            use_gradient_checkpointing="unsloth",  # True or "unsloth" for very long context
+            random_state=seed,
+            use_rslora=False,  # We support rank stabilized LoRA
+            loftq_config=None,  # And LoftQ
+        )
+    except RuntimeError as e:
+        if "added LoRA adapter".lower() not in str(e).lower():
+            raise e
 
     _model_name = model_name.lower()
     if "llama-3.1" in _model_name or "llama3.1" in _model_name or "llama-3.2" in _model_name or "llama3.2" in _model_name:

@@ -52,21 +52,25 @@ def train_model(
         device_map="cuda:0",
     )
 
-    model = FastVisionModel.get_peft_model(
-        model,
-        finetune_vision_layers=finetune_vision_layers,  # False if not finetuning vision layers
-        finetune_language_layers=finetune_language_layers,  # False if not finetuning language layers
-        finetune_attention_modules=finetune_attention_modules,  # False if not finetuning attention layers
-        finetune_mlp_modules=finetune_mlp_modules,  # False if not finetuning MLP layers
-        r=16,  # The larger, the higher the accuracy, but might overfit
-        lora_alpha=16,  # Recommended alpha == r at least
-        lora_dropout=0,
-        bias="none",
-        random_state=seed,
-        use_rslora=False,  # We support rank stabilized LoRA
-        loftq_config=None,  # And LoftQ
-        target_modules=target_modules,  # Optional now! Can specify a list if needed
-    )
+    try:
+        model = FastVisionModel.get_peft_model(
+            model,
+            finetune_vision_layers=finetune_vision_layers,  # False if not finetuning vision layers
+            finetune_language_layers=finetune_language_layers,  # False if not finetuning language layers
+            finetune_attention_modules=finetune_attention_modules,  # False if not finetuning attention layers
+            finetune_mlp_modules=finetune_mlp_modules,  # False if not finetuning MLP layers
+            r=16,  # The larger, the higher the accuracy, but might overfit
+            lora_alpha=16,  # Recommended alpha == r at least
+            lora_dropout=0,
+            bias="none",
+            random_state=seed,
+            use_rslora=False,  # We support rank stabilized LoRA
+            loftq_config=None,  # And LoftQ
+            target_modules=target_modules,  # Optional now! Can specify a list if needed
+        )
+    except RuntimeError as e:
+        if "added LoRA adapter".lower() not in str(e).lower():
+            raise e
 
     make_dataset_parameters = _get_function_used_params(
         make_dataset_fn,

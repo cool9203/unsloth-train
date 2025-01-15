@@ -32,7 +32,7 @@ def check_image_path(
     image_path = Path(image_root_path, image_path) if image_root_path and Path(image_root_path).exists() else Path(image_path)
     if image_path.suffix in _support_image_format:  # Is image
         if image_path.exists():
-            return image_path
+            return str(image_path)
         else:
             FileNotFoundError(f"You seem pass an image, but not exist. path: '{str(image_path)}'")
     return None

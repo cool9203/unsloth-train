@@ -75,7 +75,7 @@ def check_iterate_num(
     return iterate_num if is_exist else None
 
 
-def _read_label_data_and_copy_image(
+def load_label_data(
     iterate_num: int,
     path_chain: list[PathLike],
     folder_name: str = None,
@@ -121,7 +121,7 @@ def _read_label_data_and_copy_image(
     for path in Path(*path_chain).iterdir():
         if path.is_file():
             continue
-        data += _read_label_data_and_copy_image(
+        data += load_label_data(
             iterate_num=iterate_num,
             path_chain=path_chain + [path.name],
             folder_name=folder_name,
@@ -159,7 +159,7 @@ def convert_dataset_from_tmpco(
     assert iterate_num is not None, f"Error: this '{root_path!s}' can't parse with tmpco folder layout"
     logger.info(f"Iterate count: {iterate_num}")
 
-    data = _read_label_data_and_copy_image(
+    data = load_label_data(
         iterate_num=iterate_num + 1,
         path_chain=[root_path],
         folder_name=folder_name,
@@ -208,7 +208,7 @@ def convert_dataset_from_tmpco(
                     {
                         "role": "user",
                         "content": [
-                            {"type": "image", "image": str(Path("image", f'{df.iloc[i]["source"]}.jpg'))},
+                            {"type": "image", "image": str(Path(f'{df.iloc[i]["source"]}.jpg'))},
                             {"type": "text", "text": prompt},
                         ],
                     },

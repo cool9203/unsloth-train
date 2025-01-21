@@ -171,7 +171,7 @@ def convert_dataset_from_tmpco(
 
     # Create image path
     logger.info("Create image path")
-    image_save_path = Path(output_path, "image")
+    image_save_path = Path(output_path, "images")
     image_save_path.mkdir(parents=True, exist_ok=True)
 
     iter_length = TQDM.tqdm(range(len(df))) if tqdm else range(len(df))

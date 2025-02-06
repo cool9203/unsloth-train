@@ -1,10 +1,14 @@
 # coding: utf-8
 
 import argparse
+import base64
+import io
 import re
 
 import gradio as gr
+import httpx
 import pypandoc
+from PIL import Image
 from transformers import MllamaForConditionalGeneration, MllamaProcessor
 from unsloth import FastVisionModel
 
@@ -92,24 +96,43 @@ def generate(
     return tokenizer.decode(output[0], skip_special_tokens=True)
 
 
-def handle_request(
+def inference_table(
     model_name_or_path: str,
     image,
     prompt: str,
+    crop_table_status: bool,
+    crop_table_padding: int,
     device_map: str = "auto",
     max_new_tokens: int = 4096,
     use_cache: bool = True,
     top_p: float = 1.0,
 ):
+    crop_image = image
     if model_name_or_path != __model.get("name", None):
         (__model["model"], __model["tokenizer"]) = load_model(
             model_name_or_path=model_name_or_path,
             device_map=device_map,
         )
         __model["name"] = model_name_or_path
+
+    if crop_table_status:
+        resp = httpx.post(
+            "http://10.70.0.232:9999/upload",
+            files={"file": io.BytesIO(image)},
+            data={
+                "action": "crop",
+                "padding": crop_table_padding,
+            },
+        )
+
+        for _, crop_image_base64 in resp.json().items():
+            crop_image_data = base64.b64decode(crop_image_base64)
+            crop_image = Image.open(io.BytesIO(crop_image_data))
+            break
+
     origin_response = generate(
         prompt=prompt,
-        image=image,
+        image=crop_image,
         device_map=device_map,
         max_new_tokens=max_new_tokens,
         use_cache=use_cache,
@@ -125,7 +148,7 @@ def handle_request(
             html_response = pypandoc.convert_text(origin_response, "html", format="markdown")
         except Exception as e:
             html_response = "輸出的內容不是正確的 latex or markdown"
-    return origin_response, html_response
+    return origin_response, html_response, crop_image
 
 
 def test_website(
@@ -144,36 +167,47 @@ def test_website(
         __model["name"] = model_name_or_path
 
     # Gradio 接口定義
-    with gr.Blocks() as demo:
-        gr.Markdown("## LLM 測試網站（支持圖片與文本輸入）")
+    with gr.Blocks(title="VLM 生成表格測試網站") as demo:
+        gr.Markdown("## VLM 生成表格測試網站")
 
         with gr.Row():
+            with gr.Column():
+                image_input = gr.Image(label="上傳圖片", type="pil")
+
             with gr.Column():
                 _model_name_or_path = gr.Textbox(
                     label="模型名稱或路徑", value=__model.get("name", None), visible=not model_name_or_path
                 )
-                image_input = gr.Image(label="上傳圖片", type="pil")
                 prompt_input = gr.Textbox(label="輸入文字提示", lines=2, value="latex table ocr")
-                submit_button = gr.Button("生成")
+                crop_table_status = gr.Checkbox(label="是否自動偵測表格", value=True)
+                crop_table_padding = gr.Slider(label="偵測表格裁切框 padding", value=-60, minimum=-300, maximum=300, step=1)
+
+        submit_button = gr.Button("生成")
+        text_output = gr.Textbox(label="生成的文字輸出")
+
+        with gr.Row():
+            with gr.Column():
+                crop_table_result = gr.Image(label="偵測表格結果")
 
             with gr.Column():
                 html_output = gr.HTML(label="生成的表格輸出")
-                text_output = gr.Textbox(label="生成的文字輸出")
 
         # Constant augments
         _device_map = gr.Textbox(value=device_map, visible=False)
         _max_new_tokens = gr.Number(value=max_new_tokens, visible=False)
 
         submit_button.click(
-            handle_request,
+            inference_table,
             inputs=[
                 _model_name_or_path,
                 image_input,
                 prompt_input,
+                crop_table_status,
+                crop_table_padding,
                 _device_map,
                 _max_new_tokens,
             ],
-            outputs=[text_output, html_output],
+            outputs=[text_output, html_output, crop_table_result],
         )
         demo.launch(
             server_name=host,

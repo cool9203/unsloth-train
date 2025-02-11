@@ -14,6 +14,8 @@ from unsloth import FastVisionModel
 
 _latex_tabular_pattern = r"(\\begin[\S\s]*\\end{tabular})"
 _markdown_table_pattern = r"(\|[\S\s]*\|)"
+_default_prompt = "latex table ocr"
+_default_system_prompt = "You should follow the instructions carefully and explain your answers in detail."
 
 __model: dict[str, MllamaForConditionalGeneration | MllamaProcessor | str] = {
     "model": None,
@@ -35,8 +37,8 @@ def arg_parser() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run test website to test unsloth training with llm or vlm")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Web server host")
     parser.add_argument("--port", type=int, default=7860, help="Web server port")
-    parser.add_argument("--model_name_or_path", type=str, default=None, help="Run model name or path")
-    parser.add_argument("--max_new_tokens", type=int, default=4096, help="Run model generate max new tokens")
+    parser.add_argument("--model_name", type=str, default=None, help="Run model name or path")
+    parser.add_argument("--max_tokens", type=int, default=4096, help="Run model generate max new tokens")
     parser.add_argument("--device_map", type=str, default="cuda:0", help="Run model device map")
 
     args = parser.parse_args()
@@ -45,12 +47,12 @@ def arg_parser() -> argparse.Namespace:
 
 
 def load_model(
-    model_name_or_path: str,
+    model_name: str,
     load_in_4bit: bool = True,
     device_map: str = "cuda:0",
 ):
     model, tokenizer = FastVisionModel.from_pretrained(
-        model_name=model_name_or_path,  # YOUR MODEL YOU USED FOR TRAINING
+        model_name=model_name,  # YOUR MODEL YOU USED FOR TRAINING
         load_in_4bit=load_in_4bit,  # Set to False for 16bit LoRA
         device_map=device_map,
     )
@@ -61,17 +63,17 @@ def load_model(
 def generate(
     image,
     prompt: str,
+    system_prompt: str = _default_system_prompt,
     device_map: str = "auto",
     max_new_tokens: int = 1024,
     **kwds,
 ) -> str:
+    model = __model.get("model")
     tokenizer = __model.get("tokenizer")
     messages = [
         {
             "role": "user",
-            "content": [
-                {"type": "text", "text": "You should follow the instructions carefully and explain your answers in detail."}
-            ],
+            "content": [{"type": "text", "text": system_prompt}],
         },
         {
             "role": "user",
@@ -88,7 +90,7 @@ def generate(
         add_special_tokens=True,
         return_tensors="pt",
     ).to(device_map)
-    output = __model.get("model").generate(
+    output = model.generate(
         **inputs,
         max_new_tokens=max_new_tokens,
         **kwds,
@@ -97,25 +99,24 @@ def generate(
 
 
 def inference_table(
-    model_name_or_path: str,
     image,
     prompt: str,
-    crop_table_status: bool,
+    detect_table: bool,
     crop_table_padding: int,
+    max_tokens: int = 4096,
+    model_name: str = None,
+    system_prompt: str = _default_system_prompt,
     device_map: str = "auto",
-    max_new_tokens: int = 4096,
-    use_cache: bool = True,
-    top_p: float = 1.0,
 ):
     crop_image = image
-    if model_name_or_path != __model.get("name", None):
+    if model_name and model_name != __model.get("name", None):
         (__model["model"], __model["tokenizer"]) = load_model(
-            model_name_or_path=model_name_or_path,
+            model_name=model_name,
             device_map=device_map,
         )
-        __model["name"] = model_name_or_path
+        __model["name"] = model_name
 
-    if crop_table_status:
+    if detect_table:
         resp = httpx.post(
             "http://10.70.0.232:9999/upload",
             files={"file": io.BytesIO(image)},
@@ -132,11 +133,12 @@ def inference_table(
 
     origin_response = generate(
         prompt=prompt,
+        system_prompt=system_prompt,
         image=crop_image,
         device_map=device_map,
-        max_new_tokens=max_new_tokens,
-        use_cache=use_cache,
-        top_p=top_p,
+        max_new_tokens=max_tokens,
+        use_cache=True,
+        top_p=1.0,
         do_sample=False,
     )
     try:
@@ -154,17 +156,17 @@ def inference_table(
 def test_website(
     host: str = "127.0.0.1",
     port: int = 7860,
-    model_name_or_path: str = None,
-    max_new_tokens: int = 4096,
+    model_name: str = None,
+    max_tokens: int = 4096,
     device_map: str = "cuda:0",
     **kwds,
 ):
-    if model_name_or_path and __model.get("name") is None:
+    if model_name and __model.get("name") is None:
         (__model["model"], __model["tokenizer"]) = load_model(
-            model_name_or_path=model_name_or_path,
+            model_name=model_name,
             device_map=device_map,
         )
-        __model["name"] = model_name_or_path
+        __model["name"] = model_name
 
     # Gradio 接口定義
     with gr.Blocks(title="VLM 生成表格測試網站") as demo:
@@ -175,11 +177,11 @@ def test_website(
                 image_input = gr.Image(label="上傳圖片", type="pil")
 
             with gr.Column():
-                _model_name_or_path = gr.Textbox(
-                    label="模型名稱或路徑", value=__model.get("name", None), visible=not model_name_or_path
-                )
-                prompt_input = gr.Textbox(label="輸入文字提示", lines=2, value="latex table ocr")
-                crop_table_status = gr.Checkbox(label="是否自動偵測表格", value=True)
+                _model_name = gr.Textbox(label="模型名稱或路徑", value=__model.get("name", None), visible=not model_name)
+                system_prompt_input = gr.Textbox(label="輸入系統文字提示", lines=2, value=_default_system_prompt)
+                prompt_input = gr.Textbox(label="輸入文字提示", lines=2, value=_default_prompt)
+                _max_tokens = gr.Slider(label="Max tokens", value=max_tokens, minimum=1, maximum=8192, step=1)
+                detect_table = gr.Checkbox(label="是否自動偵測表格", value=True)
                 crop_table_padding = gr.Slider(label="偵測表格裁切框 padding", value=-60, minimum=-300, maximum=300, step=1)
 
         submit_button = gr.Button("生成")
@@ -194,18 +196,18 @@ def test_website(
 
         # Constant augments
         _device_map = gr.Textbox(value=device_map, visible=False)
-        _max_new_tokens = gr.Number(value=max_new_tokens, visible=False)
 
         submit_button.click(
             inference_table,
             inputs=[
-                _model_name_or_path,
                 image_input,
                 prompt_input,
-                crop_table_status,
+                detect_table,
                 crop_table_padding,
+                _max_tokens,
+                _model_name,
+                system_prompt_input,
                 _device_map,
-                _max_new_tokens,
             ],
             outputs=[text_output, html_output, crop_table_result],
         )

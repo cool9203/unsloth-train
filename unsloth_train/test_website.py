@@ -3,7 +3,6 @@
 import argparse
 import base64
 import io
-import re
 
 import gradio as gr
 import httpx
@@ -12,8 +11,8 @@ from PIL import Image
 from transformers import MllamaForConditionalGeneration, MllamaProcessor
 from unsloth import FastVisionModel
 
-_latex_tabular_pattern = r"(\\begin[\S\s]*\\end{tabular})"
-_markdown_table_pattern = r"(\|[\S\s]*\|)"
+from unsloth_train import utils
+
 _default_prompt = "latex table ocr"
 _default_system_prompt = "You should follow the instructions carefully and explain your answers in detail."
 
@@ -90,16 +89,17 @@ def generate(
         add_special_tokens=True,
         return_tensors="pt",
     ).to(device_map)
-    output = model.generate(
+    outputs = model.generate(
         **inputs,
         max_new_tokens=max_new_tokens,
         **kwds,
     )
-    return tokenizer.decode(output[0], skip_special_tokens=True)
+    # Reference: https://github.com/huggingface/transformers/issues/17117#issuecomment-1124497554
+    return tokenizer.batch_decode(outputs[:, inputs["input_ids"].shape[1] :], skip_special_tokens=True)[0]
 
 
 def inference_table(
-    image,
+    image: Image.Image,
     prompt: str,
     detect_table: bool,
     crop_table_padding: int,
@@ -107,8 +107,14 @@ def inference_table(
     model_name: str = None,
     system_prompt: str = _default_system_prompt,
     device_map: str = "auto",
+    repair_latex: bool = False,
+    full_border: bool = False,
+    unsqueeze: bool = False,
 ):
     crop_image = image
+    file_io = io.BytesIO()
+    image.save(file_io, format="png")
+    file_io.seek(0)
     if model_name and model_name != __model.get("name", None):
         (__model["model"], __model["tokenizer"]) = load_model(
             model_name=model_name,
@@ -119,7 +125,7 @@ def inference_table(
     if detect_table:
         resp = httpx.post(
             "http://10.70.0.232:9999/upload",
-            files={"file": io.BytesIO(image)},
+            files={"file": file_io},
             data={
                 "action": "crop",
                 "padding": crop_table_padding,
@@ -142,11 +148,18 @@ def inference_table(
         do_sample=False,
     )
     try:
-        origin_response = re.findall(_latex_tabular_pattern, origin_response)[0]
+        if repair_latex:
+            origin_response = utils.convert_pandas_to_latex(
+                df=utils.convert_latex_table_to_pandas(
+                    latex_table_str=origin_response,
+                    headers=True,
+                    unsqueeze=unsqueeze,
+                ),
+                full_border=full_border,
+            )
         html_response = pypandoc.convert_text(origin_response, "html", format="latex")
     except Exception as e:
         try:
-            origin_response = re.findall(_markdown_table_pattern, origin_response)[0]
             html_response = pypandoc.convert_text(origin_response, "html", format="markdown")
         except Exception as e:
             html_response = "輸出的內容不是正確的 latex or markdown"
@@ -183,6 +196,9 @@ def test_website(
                 _max_tokens = gr.Slider(label="Max tokens", value=max_tokens, minimum=1, maximum=8192, step=1)
                 detect_table = gr.Checkbox(label="是否自動偵測表格", value=True)
                 crop_table_padding = gr.Slider(label="偵測表格裁切框 padding", value=-60, minimum=-300, maximum=300, step=1)
+                repair_latex = gr.Checkbox(value=True, label="修復 latex")
+                full_border = gr.Checkbox(label="修復 latex 表格全框線")
+                unsqueeze = gr.Checkbox(label="修復 latex 並解開多行/列合併")
 
         submit_button = gr.Button("生成")
         text_output = gr.Textbox(label="生成的文字輸出")
@@ -208,6 +224,9 @@ def test_website(
                 _model_name,
                 system_prompt_input,
                 _device_map,
+                repair_latex,
+                full_border,
+                unsqueeze,
             ],
             outputs=[text_output, html_output, crop_table_result],
         )

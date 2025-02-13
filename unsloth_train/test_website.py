@@ -159,10 +159,11 @@ def inference_table(
     end_time = time.time()
 
     try:
+        origin_response = generate_response["content"]
         if repair_latex:
             origin_response = utils.convert_pandas_to_latex(
                 df=utils.convert_latex_table_to_pandas(
-                    latex_table_str=generate_response["content"],
+                    latex_table_str=origin_response,
                     headers=True,
                     unsqueeze=unsqueeze,
                 ),

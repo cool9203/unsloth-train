@@ -3,6 +3,7 @@
 import argparse
 import base64
 import io
+import time
 
 import gradio as gr
 import httpx
@@ -66,7 +67,7 @@ def generate(
     device_map: str = "auto",
     max_new_tokens: int = 1024,
     **kwds,
-) -> str:
+) -> dict[str, str | int]:
     model = __model.get("model")
     tokenizer = __model.get("tokenizer")
     messages = [
@@ -95,7 +96,14 @@ def generate(
         **kwds,
     )
     # Reference: https://github.com/huggingface/transformers/issues/17117#issuecomment-1124497554
-    return tokenizer.batch_decode(outputs[:, inputs["input_ids"].shape[1] :], skip_special_tokens=True)[0]
+    return {
+        "content": tokenizer.batch_decode(outputs[:, inputs["input_ids"].shape[1] :], skip_special_tokens=True)[0],
+        "usage": {
+            "prompt_tokens": inputs["input_ids"].shape[1],
+            "completion_tokens": len(outputs[:, inputs["input_ids"].shape[1] :][0]),
+            "total_tokens": inputs["input_ids"].shape[1] + len(outputs[:, inputs["input_ids"].shape[1] :][0]),
+        },
+    }
 
 
 def inference_table(
@@ -137,7 +145,8 @@ def inference_table(
             crop_image = Image.open(io.BytesIO(crop_image_data))
             break
 
-    origin_response = generate(
+    start_time = time.time()
+    generate_response = generate(
         prompt=prompt,
         system_prompt=system_prompt,
         image=crop_image,
@@ -147,11 +156,13 @@ def inference_table(
         top_p=1.0,
         do_sample=False,
     )
+    end_time = time.time()
+
     try:
         if repair_latex:
             origin_response = utils.convert_pandas_to_latex(
                 df=utils.convert_latex_table_to_pandas(
-                    latex_table_str=origin_response,
+                    latex_table_str=generate_response["content"],
                     headers=True,
                     unsqueeze=unsqueeze,
                 ),
@@ -163,7 +174,12 @@ def inference_table(
             html_response = pypandoc.convert_text(origin_response, "html", format="markdown")
         except Exception as e:
             html_response = "輸出的內容不是正確的 latex or markdown"
-    return origin_response, html_response, crop_image
+    return (
+        origin_response,
+        html_response,
+        crop_image,
+        generate_response["usage"]["completion_tokens"] / (end_time - start_time),
+    )
 
 
 def test_website(
@@ -199,6 +215,7 @@ def test_website(
                 repair_latex = gr.Checkbox(value=True, label="修復 latex")
                 full_border = gr.Checkbox(label="修復 latex 表格全框線")
                 unsqueeze = gr.Checkbox(label="修復 latex 並解開多行/列合併")
+                time_usage = gr.Textbox(label="每秒幾個 token")
 
         submit_button = gr.Button("生成")
         text_output = gr.Textbox(label="生成的文字輸出")
@@ -228,7 +245,7 @@ def test_website(
                 full_border,
                 unsqueeze,
             ],
-            outputs=[text_output, html_output, crop_table_result],
+            outputs=[text_output, html_output, crop_table_result, time_usage],
         )
         demo.launch(
             server_name=host,

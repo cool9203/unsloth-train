@@ -12,6 +12,27 @@ _latex_multicolumn_pattern = r"\\multicolumn{(\d+)}{([lrc|]+)}{(.*)}"
 _latex_multirow_pattern = r"\\multirow{(\d+)}{([\*\d]+)}{(.*)}"
 
 
+class LatexTableGeneratorError(Exception): ...
+
+
+class NotDetectTableError(LatexTableGeneratorError): ...
+
+
+class NotColumnMatchError(LatexTableGeneratorError): ...
+
+
+class ImagePasteError(LatexTableGeneratorError): ...
+
+
+class NotLatexError(LatexTableGeneratorError): ...
+
+
+class NotSupportLatexError(LatexTableGeneratorError): ...
+
+
+class NotSupportMultiLatexTableError(NotSupportLatexError): ...
+
+
 def _get_function_used_params(
     callable: Callable,
     **kwds: Dict,
@@ -60,9 +81,9 @@ def pre_check_latex_table_string(
 ) -> Tuple[str, str]:
     results = re.findall(_latex_table_begin_pattern, latex_table_str)
     if not results:
-        raise ValueError("Not latex table")
+        raise NotLatexError("Not latex table")
     elif len(results) > 1:
-        raise ValueError("Not support convert have multi latex table")
+        raise NotSupportMultiLatexTableError("Not support convert have multi latex table")
 
     begin_str = results[0]
     end_str = r"\end{tabular}"
@@ -136,7 +157,7 @@ def convert_latex_table_to_pandas(
         else:
             df = pd.DataFrame(cleaned_data)
     except ValueError as e:
-        raise ValueError("Not support this latex") from e
+        raise NotSupportLatexError("Not support this latex") from e
 
     return df
 
@@ -159,13 +180,13 @@ def convert_pandas_to_latex(
     for i in range(len(df)):
         row = list()
         skip_count = 0
-        for column in df.columns:
+        for column_index in range(len(df.columns)):
             if skip_count > 0:
                 skip_count -= 1
             else:
-                multicolumn_result = re.findall(_latex_multicolumn_pattern, df[column].iloc[i])
+                multicolumn_result = re.findall(_latex_multicolumn_pattern, df.iloc[i, column_index])
                 skip_count = int(multicolumn_result[0][0]) - 1 if multicolumn_result and skip_count == 0 else skip_count
-                row.append(df[column].iloc[i])
+                row.append(df.iloc[i, column_index])
         latex_table_str += _row_before_text + f"{'&'.join(row)}\\\\\n"
 
     if full_border:

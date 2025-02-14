@@ -1,6 +1,7 @@
 # coding: utf-8
 
 import argparse
+import ast
 import logging
 import os
 import pprint
@@ -239,7 +240,7 @@ if __name__ == "__main__":
         passed_parameters = common_parameters.copy()
         for parameter in dataset_path_split[1].replace(" ", "").split(","):
             parameter_split = parameter.split("=", maxsplit=1)
-            passed_parameters.update({parameter_split[0]: parameter_split[1]})
+            passed_parameters.update(ast.literal_eval(f"{{'{parameter_split[0]}': {parameter_split[1]}}}"))
 
         results += eval_latex_table(
             dataset_path=dataset_path_split[0],

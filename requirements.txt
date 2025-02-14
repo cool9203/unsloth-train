@@ -1,7 +1,10 @@
 pre-commit
 numpy==1.26.4
-unsloth[cu124-ampere-torch250] @ git+https://github.com/unslothai/unsloth.git@df808d074d307d396b8c04640ef51375d68f2ef0
-unsloth-zoo
+unsloth[cu124-ampere-torch250] @ git+https://github.com/cool9203/unsloth.git
+unsloth-zoo==2024.12.7
 openpyxl==3.1.5
 jieba
 gensim
+gradio==5.9.1
+pypandoc>=1.14
+imgkit==1.2.3

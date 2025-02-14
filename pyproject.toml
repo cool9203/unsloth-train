@@ -14,13 +14,14 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "numpy==1.26.4",
     "unsloth[cu124-ampere-torch250] @ git+https://github.com/cool9203/unsloth.git",
-    "unsloth-zoo",
+    "unsloth-zoo==2024.12.7",
     "openpyxl==3.1.5",
     "jieba",
     "gensim",
 ]
     [project.optional-dependencies]
-    gradio = ["gradio==5.9.1", "pypandoc>=1.14"]
+    gradio     = ["gradio==5.9.1", "pypandoc>=1.14"]
+    eval-table = ["imgkit==1.2.3"]
 
 
 [tool]

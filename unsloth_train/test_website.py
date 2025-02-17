@@ -146,6 +146,8 @@ def inference_table(
         for crop_image_base64 in resp.json():
             crop_image_data = base64.b64decode(crop_image_base64)
             crop_images.append(Image.open(io.BytesIO(crop_image_data)))
+    else:
+        crop_images.append(image)
 
     try:
         for crop_image in crop_images:
@@ -189,7 +191,7 @@ def inference_table(
     return (
         "\n\n".join(origin_responses),
         html_response,
-        crop_images if crop_images else [image],
+        crop_images,
         generate_response["usage"]["completion_tokens"] / (used_time if used_time > 0 else 1e-6),
     )
 

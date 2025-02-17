@@ -119,10 +119,10 @@ def inference_table(
     full_border: bool = False,
     unsqueeze: bool = False,
 ):
-    crop_image = image
-    file_io = io.BytesIO()
-    image.save(file_io, format="png")
-    file_io.seek(0)
+    origin_responses = list()
+    crop_images = list()
+    used_time = 0
+
     if model_name and model_name != __model.get("name", None):
         (__model["model"], __model["tokenizer"]) = load_model(
             model_name=model_name,
@@ -131,6 +131,9 @@ def inference_table(
         __model["name"] = model_name
 
     if detect_table:
+        file_io = io.BytesIO()
+        image.save(file_io, format="jpeg")
+        file_io.seek(0)
         resp = httpx.post(
             "http://10.70.0.232:9999/upload",
             files={"file": file_io},
@@ -140,46 +143,54 @@ def inference_table(
             },
         )
 
-        for _, crop_image_base64 in resp.json().items():
+        for crop_image_base64 in resp.json():
             crop_image_data = base64.b64decode(crop_image_base64)
-            crop_image = Image.open(io.BytesIO(crop_image_data))
-            break
-
-    start_time = time.time()
-    generate_response = generate(
-        prompt=prompt,
-        system_prompt=system_prompt,
-        image=crop_image,
-        device_map=device_map,
-        max_new_tokens=max_tokens,
-        use_cache=True,
-        top_p=1.0,
-        do_sample=False,
-    )
-    end_time = time.time()
+            crop_images.append(Image.open(io.BytesIO(crop_image_data)))
 
     try:
-        origin_response = generate_response["content"]
-        if repair_latex:
-            origin_response = utils.convert_pandas_to_latex(
-                df=utils.convert_latex_table_to_pandas(
-                    latex_table_str=origin_response,
-                    headers=True,
-                    unsqueeze=unsqueeze,
-                ),
-                full_border=full_border,
+        for crop_image in crop_images:
+            start_time = time.time()
+            generate_response = generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                image=crop_image,
+                device_map=device_map,
+                max_new_tokens=max_tokens,
+                use_cache=True,
+                top_p=1.0,
+                do_sample=False,
             )
-        html_response = pypandoc.convert_text(origin_response, "html", format="latex")
-    except Exception as e:
+            end_time = time.time()
+            used_time += end_time - start_time
+
+            if repair_latex:
+                origin_responses.append(
+                    utils.convert_pandas_to_latex(
+                        df=utils.convert_latex_table_to_pandas(
+                            latex_table_str=generate_response["content"],
+                            headers=True,
+                            unsqueeze=unsqueeze,
+                        ),
+                        full_border=full_border,
+                    )
+                )
+            else:
+                origin_responses.append(generate_response["content"])
         try:
-            html_response = pypandoc.convert_text(origin_response, "html", format="markdown")
-        except Exception as e:
-            html_response = "輸出的內容不是正確的 latex or markdown"
+            html_response = pypandoc.convert_text("".join(origin_responses), "html", format="latex")
+        except Exception:
+            try:
+                html_response = pypandoc.convert_text("".join(origin_responses), "html", format="markdown")
+            except Exception:
+                html_response = pypandoc.convert_text("".join(origin_responses), "html", format="html")
+    except Exception as e:
+        html_response = "輸出的內容不是正確的 latex or markdown or html"
+
     return (
-        origin_response,
+        "\n\n".join(origin_responses),
         html_response,
-        crop_image,
-        generate_response["usage"]["completion_tokens"] / (end_time - start_time),
+        crop_images if crop_images else [image],
+        generate_response["usage"]["completion_tokens"] / (used_time if used_time > 0 else 1e-6),
     )
 
 
@@ -223,7 +234,7 @@ def test_website(
 
         with gr.Row():
             with gr.Column():
-                crop_table_result = gr.Image(label="偵測表格結果")
+                crop_table_results = gr.Gallery(label="偵測表格結果", format="jpeg")
 
             with gr.Column():
                 html_output = gr.HTML(label="生成的表格輸出")
@@ -246,7 +257,12 @@ def test_website(
                 full_border,
                 unsqueeze,
             ],
-            outputs=[text_output, html_output, crop_table_result, time_usage],
+            outputs=[
+                text_output,
+                html_output,
+                crop_table_results,
+                time_usage,
+            ],
         )
         demo.launch(
             server_name=host,

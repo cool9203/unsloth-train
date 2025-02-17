@@ -269,6 +269,7 @@ def test_website(
         demo.launch(
             server_name=host,
             server_port=port,
+            share=False,  # Reference: https://github.com/gradio-app/gradio/issues/7978#issuecomment-2567283591
         )
 
 

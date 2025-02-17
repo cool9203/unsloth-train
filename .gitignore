@@ -174,3 +174,4 @@ models
 llama.cpp
 data
 unsloth_compiled_cache
+eval_result

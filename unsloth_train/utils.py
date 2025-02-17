@@ -94,6 +94,7 @@ def convert_latex_table_to_pandas(
     latex_table_str: str,
     headers: Union[bool, Sequence[str], None] = None,
     unsqueeze: bool = False,
+    remove_all_space_row: bool = False,
 ) -> pd.DataFrame:
     pre_check_latex_table_string(latex_table_str=latex_table_str)
     processed_latex_table_str = preprocess_latex_table_string(latex_table_str)
@@ -123,7 +124,10 @@ def convert_latex_table_to_pandas(
                             _row_data.append("")
             else:
                 _row_data.append(cell.strip())
-        cleaned_data.append(_row_data)
+        if remove_all_space_row and len("".join(_row_data)) == 0:
+            continue
+        else:
+            cleaned_data.append(_row_data)
 
     # Process multirow
     for col in range(len(cleaned_data)):

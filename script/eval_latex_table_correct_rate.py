@@ -128,6 +128,7 @@ def _inference_latex_table(
     crop_table_padding: int,
     system_prompt: str,
     max_tokens: int,
+    repair_latex: bool,
     retry: int,
 ) -> str:
     _error = RuntimeError("inference latex table error")
@@ -140,6 +141,7 @@ def _inference_latex_table(
     _request_data.update(crop_table_padding=crop_table_padding) if crop_table_padding is not None else None
     _request_data.update(system_prompt=system_prompt) if system_prompt is not None else None
     _request_data.update(max_tokens=max_tokens) if max_tokens is not None else None
+    _request_data.update(repair_latex=repair_latex) if repair_latex is not None else None
 
     for _ in range(retry):
         try:
@@ -277,10 +279,11 @@ def save_result(
             image_filepath = convert_filepath(filepath=result.image_filepath, path_type=path_type)
 
             error_indexes_styling = [(index[0], index[1] + 1 if index[1] is not None else 0) for index in result.error_indexes]
-            df = pd.DataFrame([list(result.predict_df.columns)] + result.predict_df.values.tolist())
-            styling_df = df.style.apply(highlight_multiple, axis=None, targets=error_indexes_styling, style=style)
-            styling_df_html = styling_df.to_html(header=False, index=False)
-            f.write(f"""{_css}
+            if result.predict_df:
+                df = pd.DataFrame([list(result.predict_df.columns)] + result.predict_df.values.tolist())
+                styling_df = df.style.apply(highlight_multiple, axis=None, targets=error_indexes_styling, style=style)
+                styling_df_html = styling_df.to_html(header=False, index=False)
+                f.write(f"""{_css}
 <details open="true">
     <summary>原始圖片</summary>
     <img src="{image_filepath}">
@@ -301,6 +304,7 @@ def eval_latex_table(
     crop_table_padding: int = -60,
     system_prompt: str = None,
     max_tokens: int = 4096,
+    repair_latex: bool = False,
     remove_all_space_row: bool = True,
     retry: int = 5,
     inference_result_folder: str = "pred",
@@ -340,6 +344,7 @@ def eval_latex_table(
                 crop_table_padding=crop_table_padding,
                 system_prompt=system_prompt,
                 max_tokens=max_tokens,
+                repair_latex=repair_latex,
                 retry=retry,
             )
             Path(inference_filepath).parent.mkdir(exist_ok=True, parents=True)
@@ -363,6 +368,7 @@ def eval_latex_table(
                 remove_all_space_row=remove_all_space_row,
             )
         except Exception as e:
+            logger.error(txt_filepath)
             logger.exception(e)
 
         logger.debug(gold_df)
@@ -427,9 +433,10 @@ if __name__ == "__main__":
     for dataset_path in dataset_paths:
         dataset_path_split = dataset_path.split(":", maxsplit=1)
         passed_parameters = common_parameters.copy()
-        for parameter in dataset_path_split[1].replace(" ", "").split(","):
-            parameter_split = parameter.split("=", maxsplit=1)
-            passed_parameters.update(ast.literal_eval(f"{{'{parameter_split[0]}': {parameter_split[1]}}}"))
+        if len(dataset_path_split) > 1:
+            for parameter in dataset_path_split[1].replace(" ", "").split(","):
+                parameter_split = parameter.split("=", maxsplit=1)
+                passed_parameters.update(ast.literal_eval(f"{{'{parameter_split[0]}': {parameter_split[1]}}}"))
 
         logger.info(f"Eval {dataset_path_split[0]}\nparameter: {pprint.pformat(passed_parameters)}")
         results += eval_latex_table(

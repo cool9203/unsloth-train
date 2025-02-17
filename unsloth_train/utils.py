@@ -143,6 +143,8 @@ def convert_latex_table_to_pandas(
                         rf"\multirow{{{multirow_result[0][0]}}}{{{multirow_result[0][1]}}}{{{multirow_result[0][2].strip()}}}"
                     )
                     for offset in range(1, int(multirow_result[0][0])):
+                        if col + offset >= len(cleaned_data):
+                            break
                         cleaned_data[col + offset][row] = ""
 
     try:

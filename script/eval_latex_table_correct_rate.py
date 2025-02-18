@@ -279,7 +279,7 @@ def save_result(
             image_filepath = convert_filepath(filepath=result.image_filepath, path_type=path_type)
 
             error_indexes_styling = [(index[0], index[1] + 1 if index[1] is not None else 0) for index in result.error_indexes]
-            if result.predict_df:
+            if result.predict_df is not None:
                 df = pd.DataFrame([list(result.predict_df.columns)] + result.predict_df.values.tolist())
                 styling_df = df.style.apply(highlight_multiple, axis=None, targets=error_indexes_styling, style=style)
                 styling_df_html = styling_df.to_html(header=False, index=False)

@@ -4,20 +4,21 @@ import argparse
 import base64
 import io
 import time
+from pathlib import Path
 
 import gradio as gr
 import httpx
 import pypandoc
+from peft import PeftConfig, PeftModel
 from PIL import Image
-from transformers import MllamaForConditionalGeneration, MllamaProcessor
-from unsloth import FastVisionModel
+from transformers import AutoModelForVision2Seq, AutoProcessor
 
 from unsloth_train import utils
 
 _default_prompt = "latex table ocr"
 _default_system_prompt = "You should follow the instructions carefully and explain your answers in detail."
 
-__model: dict[str, MllamaForConditionalGeneration | MllamaProcessor | str] = {
+__model: dict[str, AutoModelForVision2Seq | AutoProcessor | str] = {
     "model": None,
     "tokenizer": None,
     "name": None,
@@ -35,11 +36,13 @@ def arg_parser() -> argparse.Namespace:
     """
 
     parser = argparse.ArgumentParser(description="Run test website to test unsloth training with llm or vlm")
+    parser.add_argument("-m", "--model_name", type=str, default=None, help="Run model name or path")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Web server host")
     parser.add_argument("--port", type=int, default=7860, help="Web server port")
-    parser.add_argument("--model_name", type=str, default=None, help="Run model name or path")
     parser.add_argument("--max_tokens", type=int, default=4096, help="Run model generate max new tokens")
     parser.add_argument("--device_map", type=str, default="cuda:0", help="Run model device map")
+    parser.add_argument("--dev", dest="dev_mode", action="store_true", help="Dev mode")
+    parser.add_argument("--example_folder", type=str, default="example", help="Example folder")
 
     args = parser.parse_args()
 
@@ -50,13 +53,47 @@ def load_model(
     model_name: str,
     load_in_4bit: bool = True,
     device_map: str = "cuda:0",
+    token: int = 8192,
+    revision: str = None,
+    trust_remote_code: bool = False,
 ):
-    model, tokenizer = FastVisionModel.from_pretrained(
-        model_name=model_name,  # YOUR MODEL YOU USED FOR TRAINING
-        load_in_4bit=load_in_4bit,  # Set to False for 16bit LoRA
+    model = AutoModelForVision2Seq.from_pretrained(
+        pretrained_model_name_or_path=model_name,
+        load_in_4bit=load_in_4bit,
         device_map=device_map,
     )
-    FastVisionModel.for_inference(model)  # Enable for inference!
+    tokenizer = AutoProcessor.from_pretrained(
+        pretrained_model_name_or_path=model_name,
+        device_map=device_map,
+    )
+
+    try:
+        PeftConfig.from_pretrained(
+            model_name,
+            token=token,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+        )
+        model = PeftModel.from_pretrained(
+            model,
+            model_name,
+            token=token,
+            revision=revision,
+            is_trainable=True,
+            trust_remote_code=trust_remote_code,
+        )
+    except Exception:
+        pass
+
+    # For inference mode
+    model.gradient_checkpointing = False
+    model.training = False
+    for name, module in model.named_modules():
+        if hasattr(module, "gradient_checkpointing"):
+            module.gradient_checkpointing = False
+        if hasattr(module, "training"):
+            module.training = False
+
     return (model, tokenizer)
 
 
@@ -131,17 +168,17 @@ def inference_table(
         __model["name"] = model_name
 
     if detect_table:
-        file_io = io.BytesIO()
-        image.save(file_io, format="jpeg")
-        file_io.seek(0)
-        resp = httpx.post(
-            "http://10.70.0.232:9999/upload",
-            files={"file": file_io},
-            data={
-                "action": "crop",
-                "padding": crop_table_padding,
-            },
-        )
+        with io.BytesIO() as file_io:
+            image.save(file_io, format="png")
+            file_io.seek(0)
+            resp = httpx.post(
+                "http://10.70.0.232:9999/upload",
+                files={"file": ("image.png", file_io)},
+                data={
+                    "action": "crop",
+                    "padding": crop_table_padding,
+                },
+            )
 
         for crop_image_base64 in resp.json():
             crop_image_data = base64.b64decode(crop_image_base64)
@@ -161,6 +198,7 @@ def inference_table(
                 use_cache=True,
                 top_p=1.0,
                 do_sample=False,
+                temperature=None,
             )
             end_time = time.time()
             used_time += end_time - start_time
@@ -186,7 +224,7 @@ def inference_table(
             except Exception:
                 html_response = pypandoc.convert_text("".join(origin_responses), "html", format="html")
     except Exception as e:
-        html_response = "輸出的內容不是正確的 latex or markdown or html"
+        html_response = "推論輸出無法解析"
 
     return (
         "\n\n".join(origin_responses),
@@ -202,6 +240,8 @@ def test_website(
     model_name: str = None,
     max_tokens: int = 4096,
     device_map: str = "cuda:0",
+    dev_mode: bool = False,
+    example_folder: str = "examples",
     **kwds,
 ):
     if model_name and __model.get("name") is None:
@@ -212,12 +252,28 @@ def test_website(
         __model["name"] = model_name
 
     # Gradio 接口定義
-    with gr.Blocks(title="VLM 生成表格測試網站") as demo:
+    with gr.Blocks(
+        title="VLM 生成表格測試網站",
+        css="#component-6 { max-height: 85vh; }",
+    ) as demo:
         gr.Markdown("## VLM 生成表格測試網站")
 
         with gr.Row():
             with gr.Column():
-                image_input = gr.Image(label="上傳圖片", type="pil")
+                image_input = gr.Image(
+                    label="上傳圖片",
+                    type="pil",
+                    height="85vh",
+                )
+
+            with gr.Column():
+                html_output = gr.HTML(label="生成的表格輸出")
+
+        submit_button = gr.Button("生成表格")
+
+        with gr.Row():
+            with gr.Column():
+                crop_table_results = gr.Gallery(label="偵測表格結果", format="png")
 
             with gr.Column():
                 _model_name = gr.Textbox(label="模型名稱或路徑", value=__model.get("name", None), visible=not model_name)
@@ -226,23 +282,58 @@ def test_website(
                 _max_tokens = gr.Slider(label="Max tokens", value=max_tokens, minimum=1, maximum=8192, step=1)
                 detect_table = gr.Checkbox(label="是否自動偵測表格", value=True)
                 crop_table_padding = gr.Slider(label="偵測表格裁切框 padding", value=-60, minimum=-300, maximum=300, step=1)
-                repair_latex = gr.Checkbox(value=True, label="修復 latex")
-                full_border = gr.Checkbox(label="修復 latex 表格全框線")
-                unsqueeze = gr.Checkbox(label="修復 latex 並解開多行/列合併")
+                repair_latex = gr.Checkbox(value=True, label="修復 latex", visible=dev_mode)
+                full_border = gr.Checkbox(label="修復 latex 表格全框線", visible=dev_mode)
+                unsqueeze = gr.Checkbox(label="修復 latex 並解開多行/列合併", visible=dev_mode)
                 time_usage = gr.Textbox(label="每秒幾個 token")
 
-        submit_button = gr.Button("生成")
-        text_output = gr.Textbox(label="生成的文字輸出")
-
-        with gr.Row():
-            with gr.Column():
-                crop_table_results = gr.Gallery(label="偵測表格結果", format="jpeg")
-
-            with gr.Column():
-                html_output = gr.HTML(label="生成的表格輸出")
+        text_output = gr.Textbox(label="生成的文字輸出", visible=dev_mode)
 
         # Constant augments
         _device_map = gr.Textbox(value=device_map, visible=False)
+
+        # Examples
+        if Path(example_folder).exists():
+            example_files = sorted(
+                [
+                    (str(path.resolve()), path.name)
+                    for path in Path(example_folder).iterdir()
+                    if path.suffix.lower() in [".jpg", ".jpeg", ".png"]
+                ],
+                key=lambda e: e[1],
+            )
+            examples = gr.Examples(
+                examples=[
+                    [
+                        Image.open(path),
+                        _default_prompt,
+                        True,
+                        -60,
+                        4096,
+                        _model_name,
+                        _default_system_prompt,
+                        _device_map,
+                        True,
+                        False,
+                        False,
+                    ]
+                    for path, name in example_files
+                ],
+                example_labels=[name for path, name in example_files],
+                inputs=[
+                    image_input,
+                    prompt_input,
+                    detect_table,
+                    crop_table_padding,
+                    _max_tokens,
+                    _model_name,
+                    system_prompt_input,
+                    _device_map,
+                    repair_latex,
+                    full_border,
+                    unsqueeze,
+                ],
+            )
 
         submit_button.click(
             inference_table,

@@ -4,21 +4,30 @@ import argparse
 import base64
 import io
 import time
+import traceback
 from pathlib import Path
 
 import gradio as gr
 import httpx
 import pypandoc
+import torch
 from peft import PeftConfig, PeftModel
 from PIL import Image
-from transformers import AutoModelForVision2Seq, AutoProcessor
+from transformers import (
+    AutoModelForVision2Seq,
+    AutoProcessor,
+    BitsAndBytesConfig,
+    PreTrainedModel,
+    PreTrainedTokenizer,
+    ProcessorMixin,
+)
 
 from unsloth_train import utils
 
 _default_prompt = "latex table ocr"
 _default_system_prompt = "You should follow the instructions carefully and explain your answers in detail."
 
-__model: dict[str, AutoModelForVision2Seq | AutoProcessor | str] = {
+__model: dict[str, PreTrainedModel | ProcessorMixin | PreTrainedTokenizer | str] = {
     "model": None,
     "tokenizer": None,
     "name": None,
@@ -57,11 +66,25 @@ def load_model(
     revision: str = None,
     trust_remote_code: bool = False,
 ):
-    model = AutoModelForVision2Seq.from_pretrained(
-        pretrained_model_name_or_path=model_name,
-        load_in_4bit=load_in_4bit,
-        device_map=device_map,
-    )
+    try:
+        model = AutoModelForVision2Seq.from_pretrained(
+            pretrained_model_name_or_path=model_name,
+            device_map=device_map,
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=load_in_4bit,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            ),
+            attn_implementation="flash_attention_2",
+        )
+    except ValueError:
+        model = AutoModelForVision2Seq.from_pretrained(
+            pretrained_model_name_or_path=model_name,
+            device_map=device_map,
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=load_in_4bit,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            ),
+        )
     tokenizer = AutoProcessor.from_pretrained(
         pretrained_model_name_or_path=model_name,
         device_map=device_map,
@@ -107,19 +130,24 @@ def generate(
 ) -> dict[str, str | int]:
     model = __model.get("model")
     tokenizer = __model.get("tokenizer")
-    messages = [
-        {
-            "role": "user",
-            "content": [{"type": "text", "text": system_prompt}],
-        },
+    messages = list()
+
+    if system_prompt:
+        messages.append(
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": system_prompt}],
+            }
+        )
+    messages.append(
         {
             "role": "user",
             "content": [
                 {"type": "image"},
                 {"type": "text", "text": prompt},
             ],
-        },
-    ]
+        }
+    )
     input_text = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
     inputs = tokenizer(
         image,
@@ -127,11 +155,13 @@ def generate(
         add_special_tokens=True,
         return_tensors="pt",
     ).to(device_map)
+
     outputs = model.generate(
         **inputs,
         max_new_tokens=max_new_tokens,
         **kwds,
     )
+
     # Reference: https://github.com/huggingface/transformers/issues/17117#issuecomment-1124497554
     return {
         "content": tokenizer.batch_decode(outputs[:, inputs["input_ids"].shape[1] :], skip_special_tokens=True)[0],
@@ -159,6 +189,7 @@ def inference_table(
     origin_responses = list()
     crop_images = list()
     used_time = 0
+    completion_tokens = 0
 
     if model_name and model_name != __model.get("name", None):
         (__model["model"], __model["tokenizer"]) = load_model(
@@ -197,11 +228,13 @@ def inference_table(
                 max_new_tokens=max_tokens,
                 use_cache=True,
                 top_p=1.0,
+                top_k=None,
                 do_sample=False,
                 temperature=None,
             )
             end_time = time.time()
             used_time += end_time - start_time
+            completion_tokens += generate_response["usage"]["completion_tokens"]
 
             if repair_latex:
                 origin_responses.append(
@@ -225,12 +258,13 @@ def inference_table(
                 html_response = pypandoc.convert_text("".join(origin_responses), "html", format="html")
     except Exception as e:
         html_response = "推論輸出無法解析"
+        traceback.print_exception(e)
 
     return (
         "\n\n".join(origin_responses),
         html_response,
         crop_images,
-        generate_response["usage"]["completion_tokens"] / (used_time if used_time > 0 else 1e-6),
+        completion_tokens / (used_time if used_time > 0 else 1e-6),
     )
 
 

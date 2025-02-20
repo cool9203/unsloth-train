@@ -17,6 +17,13 @@ from gradio_client import Client, handle_file
 
 from unsloth_train import utils
 
+_replace_vocab = {
+    "内": "內",
+    "×": "x",
+    "·": ",",
+    "，": ",",
+    r"\#": "#",
+}
 _css = r"""<style>
     details {
         border: 1px solid #aaa;
@@ -284,6 +291,10 @@ def save_result(
                 styling_df = df.style.apply(highlight_multiple, axis=None, targets=error_indexes_styling, style=style)
                 styling_df_html = styling_df.to_html(header=False, index=False)
                 f.write(f"""{_css}
+Cell count: {result.cell_count}
+<br>
+Cell correct count: {result.cell_correct_count}
+<br>
 <details open="true">
     <summary>原始圖片</summary>
     <img src="{image_filepath}">
@@ -335,7 +346,7 @@ def eval_latex_table(
     # Eval
     for txt_filepath, image_filepath, inference_filepath in TQDM.tqdm(data, desc="Eval") if tqdm else data:
         if not Path(inference_filepath).exists():
-            latex_table_text = _inference_latex_table(
+            predict_latex_table_text = _inference_latex_table(
                 client=client,
                 prompt=prompt,
                 image_path=image_filepath,
@@ -349,21 +360,30 @@ def eval_latex_table(
             )
             Path(inference_filepath).parent.mkdir(exist_ok=True, parents=True)
             with Path(inference_filepath).open("w", encoding="utf-8") as f:
-                f.write(latex_table_text)
+                f.write(predict_latex_table_text)
         else:
             with Path(inference_filepath).open("r", encoding="utf-8") as f:
-                latex_table_text = f.read()
+                predict_latex_table_text = f.read()
+
+        with Path(txt_filepath).open(mode="r", encoding="utf-8") as f:
+            gold_latex_table_text = f.read()
 
         (gold_df, predict_df) = (None, None)
         try:
-            with Path(txt_filepath).open(mode="r", encoding="utf-8") as f:
-                gold_df = utils.convert_latex_table_to_pandas(
-                    latex_table_str=f.read(),
-                    headers=True,
-                    remove_all_space_row=remove_all_space_row,
-                )
+            # Pre-process replace vocab
+            for find_word, replace_word in _replace_vocab.items():
+                gold_latex_table_text = gold_latex_table_text.replace(find_word, replace_word)
+
+            for find_word, replace_word in _replace_vocab.items():
+                predict_latex_table_text = predict_latex_table_text.replace(find_word, replace_word)
+
+            gold_df = utils.convert_latex_table_to_pandas(
+                latex_table_str=gold_latex_table_text,
+                headers=True,
+                remove_all_space_row=remove_all_space_row,
+            )
             predict_df = utils.convert_latex_table_to_pandas(
-                latex_table_str=latex_table_text,
+                latex_table_str=predict_latex_table_text,
                 headers=True,
                 remove_all_space_row=remove_all_space_row,
             )
@@ -404,9 +424,13 @@ def eval_latex_table(
             # Compare row
             for column_index in range(min(len(gold_df.columns), len(predict_df.columns))):
                 for row_index in range(min(len(gold_df), len(predict_df))):
-                    gold_text = gold_df.iloc[row_index, column_index].replace(" ", "").replace("\n", "").replace(":", "")
-                    predict_text = predict_df.iloc[row_index, column_index].replace(" ", "").replace("\n", "").replace(":", "")
-                    if gold_text == predict_text:
+                    gold_text = gold_df.iloc[row_index, column_index].strip().replace("\n", "").replace(":", "")
+                    predict_text = predict_df.iloc[row_index, column_index].strip().replace("\n", "").replace(":", "")
+                    gold_text_split = gold_text.split(" ")
+                    predict_text_split = predict_text.split(" ")
+                    if (len(gold_text_split) == len(predict_text_split) and set(gold_text_split) == set(predict_text_split)) or (
+                        gold_text.replace(" ", "") == predict_text.replace(" ", "")
+                    ):
                         result.cell_correct_count += 1
                     else:
                         result.error_indexes.append((column_index, row_index))
